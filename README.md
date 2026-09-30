@@ -42,3 +42,4 @@ Hindi (Hinglish) · English · বাংলা · मराठी · اردو �
 * Bengali/Marathi/Urdu ki translations machine-written hain (native speaker review baaki); emotion/aadat seekhna, "Hey Piyu" aur task-samay ki pehchan Hindi/Hinglish/English mein hi hai.
 * Android: koi bhi app "100% kabhi band nahi" ki guarantee nahi de sakti — Force stop ya aggressive battery-saver rok sakta hai (Settings ka 🔋 button dekhein). Login sirf is phone ka local login hai.
 * VPS par asli deploy abhi aapke check karne ke liye baaki hai (`deploy/DEPLOY.md`).
+# kamar-ai-assist
