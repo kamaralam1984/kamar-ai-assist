@@ -1,0 +1,13 @@
+[
+ {"id":"hi-priyamvada","lang":"hi","name":"प्रियम्वदा","gender":"female","desc":"मुलायम और साफ़","file":"hi_IN-priyamvada-medium.onnx","default":true},
+ {"id":"hi-pratham","lang":"hi","name":"प्रथम","gender":"male","desc":"गहरी और शांत","file":"hi_IN-pratham-medium.onnx"},
+ {"id":"hi-rohan","lang":"hi","name":"रोहन","gender":"male","desc":"हल्की और युवा","file":"hi_IN-rohan-medium.onnx"},
+ {"id":"en-jenny","lang":"en","name":"Jenny","gender":"female","desc":"soft British","file":"en_GB-jenny_dioco-medium.onnx","default":true},
+ {"id":"en-amy","lang":"en","name":"Amy","gender":"female","desc":"bright American","file":"en_US-amy-medium.onnx"},
+ {"id":"en-alba","lang":"en","name":"Alba","gender":"female","desc":"warm Scottish","file":"en_GB-alba-medium.onnx"},
+ {"id":"en-ryan","lang":"en","name":"Ryan","gender":"male","desc":"clear American","file":"en_US-ryan-medium.onnx"},
+ {"id":"en-northern","lang":"en","name":"Northern","gender":"male","desc":"deep British","file":"en_GB-northern_english_male-medium.onnx"},
+ {"id":"bn-google-15","lang":"bn","name":"বাংলা","gender":"female","desc":"Bengali","file":"bn_BD-google-medium.onnx","speaker":15,"default":true},
+ {"id":"mr-google-6","lang":"mr","name":"मराठी","gender":"female","desc":"Marathi","file":"mr_IN-google-medium.onnx","speaker":6,"default":true},
+ {"id":"ur-aegis","lang":"ur","name":"اردو","gender":"female","desc":"Urdu","file":"ur_PK-aegis_female-medium.onnx","default":true}
+]

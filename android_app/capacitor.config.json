@@ -1,0 +1,10 @@
+{
+  "appId": "in.piyu.assistant",
+  "appName": "Piyu",
+  "webDir": "www",
+  "server": { "androidScheme": "http", "cleartext": true },
+  "android": { "allowMixedContent": true },
+  "plugins": {
+    "LocalNotifications": { "smallIcon": "ic_stat_piyu", "iconColor": "#8B5CFF" }
+  }
+}

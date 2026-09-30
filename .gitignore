@@ -1,0 +1,19 @@
+# local data / environments
+data/
+.venv/
+__pycache__/
+*.pyc
+# heavy or generated (re-creatable: deploy/fetch_voices.sh, npm install, android_app/release_apk.sh)
+voices/*.onnx
+android_app/node_modules/
+android_app/android/build/
+android_app/android/app/build/
+android_app/android/.gradle/
+android_app/android/local.properties
+android_app/www/
+dist/
+apk/*.apk
+# temporary test folders
+_img/
+_imp/
+_h.pdf

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0a1a">
+<title>Piyu — Personal Assistant</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Start screen: browsers need one tap before sound/voice can play -->
+<div id="splash">
+  <div class="orb big"><i></i><i></i><i></i></div>
+  <h1>Piyu</h1>
+  <p>आपकी पर्सनल असिस्टेंट</p>
+  <button id="startBtn" class="btn primary xl">Piyu को जगाएँ</button>
+  <div id="loginBox" hidden><input id="loginPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off"><div class="hint" id="loginMsg"></div></div>
+  <small>एक बार टैप करने से आवाज़ और alarm चालू हो जाएँगे</small>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="who">
+      <div class="orb" id="orb"><i></i><i></i><i></i></div>
+      <div>
+        <b>Piyu</b>
+        <span id="status">तैयार</span>
+      </div>
+    </div>
+    <div class="clock"><b id="clock">--:--</b><span id="date"></span></div>
+  </header>
+
+  <main>
+    <!-- HOME -->
+    <section id="tab-home" class="tab active">
+      <div class="hello"><h2 id="hello">नमस्ते</h2><p id="helloSub"></p></div>
+      <div id="focusBar"></div>
+      <div id="briefCard"></div>
+      <div id="nextCard"></div>
+      <div id="focusCard"></div>
+      <div class="row-h"><h3>आज का काम</h3><span id="todayCount" class="pill"></span></div>
+      <div id="todayList" class="list"></div>
+      <div id="missedWrap" hidden>
+        <div class="row-h"><h3>छूटे हुए काम</h3></div>
+        <div id="missedList" class="list"></div>
+      </div>
+    </section>
+
+    <!-- ALL TASKS -->
+    <section id="tab-tasks" class="tab">
+      <div class="row-h">
+        <h3>सभी काम</h3>
+        <div class="acts"><select id="sortSel" class="sel"><option value="time">समय से</option><option value="priority">Priority से</option></select><button class="btn sm" id="addTaskBtn">+ नया काम</button><button class="btn sm ghost" id="icsBtn" title="Phone calendar में alarm डालें">📅 Calendar</button></div>
+      </div>
+      <div id="taskList" class="list"></div>
+    </section>
+
+    <!-- DOCUMENTS -->
+    <section id="tab-docs" class="tab">
+      <label id="drop" class="drop">
+        <input type="file" id="file" accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.md,.csv,.html,.htm,.rtf,.json,.log,.png,.jpg,.jpeg,.webp,.bmp,.gif,image/*" multiple hidden>
+        <div class="drop-ic">⬆</div>
+        <b>Document upload करें</b>
+        <span>यहाँ खींचकर छोड़ें या टैप करें · PDF (scanned भी) · DOC/DOCX · PPT/PPTX · TXT · photo</span>
+      </label>
+      <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">📷 Photo खींचें / चुनें<input type="file" id="camFile" accept="image/*" capture="environment" hidden></label>
+      <div id="upMsg" class="msg" hidden></div>
+      <div class="row-h"><h3>आपके documents</h3><button class="btn sm danger" data-act="delalldocs">सब हटाएँ</button></div>
+      <div id="docList" class="list"></div>
+      <div id="rulesBox"></div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="tab-chat" class="tab">
+      <div id="chat"></div>
+      <div class="chips" id="chips"></div>
+      <form id="chatForm">
+        <button type="button" id="micBtn" class="round" title="बोलकर पूछें">🎤</button>
+        <input id="q" autocomplete="off" placeholder="Piyu से पूछें… (जैसे: webhook कैसे add करना है?)">
+        <button class="round go" title="भेजें">➤</button>
+      </form>
+    </section>
+
+    <!-- PROGRESS -->
+    <section id="tab-prog" class="tab viz-root">
+      <div class="vfilter" role="group" aria-label="अवधि"><button data-range="7">7 दिन</button><button data-range="14">14 दिन</button><button data-range="30">30 दिन</button><button data-range="90">90 दिन</button></div>
+      <div id="progBody"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-set" class="tab">
+      <div class="card" id="webCard">
+        <h3>🌐 इंटरनेट से खोज — पूरी तरह मुफ़्त</h3>
+        <label class="chk"><input type="checkbox" id="setWeb"> जवाब documents/याददाश्त में न मिले तो इंटरनेट से खोजकर बताएँ</label>
+        <p class="hint" id="webInfo"></p>
+        <p class="hint">स्रोत: Wikipedia, DuckDuckGo (और आपका अपना SearXNG, अगर लगाया हो) — कोई API key या पैसा नहीं लगता। Google और ChatGPT की कोई मुफ़्त official API नहीं है, इसलिए उन्हें सीधे नहीं बुलाया जाता; जवाब न मिलने पर "Google / ChatGPT में खोलें" बटन ब्राउज़र में खुलते हैं। ध्यान रहे: सिर्फ़ आपका <b>सवाल</b> इंटरनेट पर जाता है, आपके documents या याददाश्त नहीं। जिस जवाब पर 👍 देंगे, वह याद हो जाता है और अगली बार बिना इंटरनेट के मिलता है।</p>
+      </div>
+      <div class="card" id="mindCard">
+        <h3>🧠 Piyu की याददाश्त और सीख</h3>
+        <label class="chk"><input type="checkbox" id="setMindOn"> मुझसे सीखना और याद रखना (आपका अंदाज़, भावना, आदतें)</label>
+        <label class="chk"><input type="checkbox" id="setMindEmp"> मेरी भावना के हिसाब से जवाब दें (हमदर्दी, नरम/खुश आवाज़)</label>
+        <label class="chk"><input type="checkbox" id="setMindRoman"> अगर मैं Roman Hinglish में लिखूँ तो जवाब भी उसी में दें</label>
+        <label class="chk"><input type="checkbox" id="setMindAsk"> बीच-बीच में मुझसे सवाल पूछें (दिन में अधिकतम 3)</label>
+        <button class="btn" id="openMem">🧠 याददाश्त देखें / बदलें</button>
+        <p class="hint">सब कुछ सिर्फ़ आपके device/server पर रहता है। यह मशीन-लर्निंग नहीं, आपकी बातचीत से सीखे गए सादे आँकड़े और याद हैं — जो आप देख, बदल और मिटा सकते हैं।</p>
+      </div>
+      <div class="card" id="voiceLib">
+        <h3>🎙 Piyu की आवाज़ — चुनें</h3>
+        <div id="personaGrid" class="personas"></div>
+        <label>हिन्दी / Hinglish आवाज़ <select id="setPvHi"></select></label>
+        <label>English आवाज़ <select id="setPvEn"></select></label>
+        <label>अंदाज़ <select id="setStyle"></select></label>
+        <label>आवाज़ की ऊँचाई <input type="range" id="setPitchSt" min="-4" max="4" step="0.5"><output id="oPitchSt"></output></label>
+        <label class="chk"><input type="checkbox" id="setHinglish"> Roman में लिखी हिन्दी (Hinglish) को हिन्दी आवाज़ में पढ़ें</label>
+        <button class="btn" id="tryHi">🔊 हिन्दी सुनें</button><button class="btn" id="tryHg">🔊 Hinglish सुनें</button><button class="btn" id="tryEn">🔊 English सुनें</button>
+        <p class="hint" id="voiceLibHint"></p>
+      </div>
+      <div class="card">
+        <h3>आवाज़ (browser की आवाज़ — backup)</h3>
+        <label>भाषा
+          <select id="setLang" data-i18n-skip><option value="hi">हिन्दी (Hinglish)</option><option value="en">English</option><option value="bn">বাংলা</option><option value="mr">मराठी</option><option value="ur">اردو</option></select>
+        </label>
+        <label>माइक किस भाषा में सुने <select id="setMic"><option value="">Auto (ऐप की भाषा)</option><option value="hi-IN">हिन्दी / Hinglish</option><option value="en-IN">English (India)</option><option value="bn-BD" data-i18n-skip>বাংলা</option><option value="mr-IN" data-i18n-skip>मराठी</option><option value="ur-PK" data-i18n-skip>اردو</option></select></label>
+        <label>हिन्दी आवाज़ <select id="setVoiceHi"></select></label>
+        <label>English आवाज़ <select id="setVoiceEn"></select></label>
+        <label>गति <input type="range" id="setRate" min="0.6" max="1.2" step="0.02"><output id="oRate"></output></label>
+        <label>Pitch (महिला आवाज़) <input type="range" id="setPitch" min="0.8" max="1.6" step="0.02"><output id="oPitch"></output></label>
+        <label>Volume <input type="range" id="setVol" min="0.2" max="1" step="0.05"><output id="oVol"></output></label>
+        <button class="btn" id="testVoice">🔊 आवाज़ सुनें</button>
+        <p class="hint" id="voiceHint"></p>
+      </div>
+      <div class="card">
+        <h3>Alarm</h3>
+        <label>पहले से बताएँ (मिनट) <input type="number" id="setPre" min="1" max="60" style="width:80px"></label>
+        <label class="chk"><input type="checkbox" id="setBrief"> सुबह का प्लान और रात का सार बोलकर बताएँ</label>
+        <label>सुबह का प्लान <input type="time" id="setBM"></label>
+        <label>रात का सार <input type="time" id="setBN"></label>
+        <button class="btn" id="testBM">☀ सुबह का प्लान सुनें</button><button class="btn" id="testBN">🌙 रात का सार सुनें</button>
+        <label class="chk"><input type="checkbox" id="setQ"> शांत समय (Quiet hours) — इस दौरान चेतावनियाँ चुप, alarm धीमा</label>
+        <label>से <input type="time" id="setQF"></label>
+        <label>तक <input type="time" id="setQT"></label>
+        <label class="chk"><input type="checkbox" id="setQH"> पूरी तरह चुप — शांत समय में alarm भी बिना आवाज़ (सिर्फ़ screen + notification)</label>
+        <p class="hint">P1 (अत्यावश्यक) alarm शांत समय में भी पूरी आवाज़ में बजता है, जब तक "पूरी तरह चुप" न चुना हो।</p>
+        <button class="btn" id="mood_calm">🙂 शांत आवाज़</button><button class="btn" id="mood_urgent">⚡ तेज़ आवाज़</button><button class="btn" id="mood_gentle">🌙 मुलायम आवाज़</button>
+        <label class="chk"><input type="checkbox" id="setWakeWord"> "Hey Piyu" बोलकर जगाएँ (हमेशा सुनती रहेगी)</label>
+        <p class="hint" id="wakeInfo">बंद है।</p>
+        <p class="hint">कहिए: "हे पीयू, अभी क्या करना है?" या सिर्फ़ "हे पीयू" — फिर वह "जी सर?" बोलेगी। Guide खुला हो या alarm बज रहा हो तो wake word के बिना भी "हो गया / दोबारा / पीछे / 5 मिनट बाद / रोको" चलता है। बोलते समय उसे रोकने के लिए "हे पीयू, रोको" कहें।</p>
+        <label class="chk"><input type="checkbox" id="setAi"> खुले सवालों के लिए local AI (Ollama) इस्तेमाल करें</label>
+        <label>AI model <select id="setAiModel"></select></label>
+        <p class="hint" id="aiInfo"></p>
+        <label>Photo / scanned PDF की भाषा (OCR)
+          <select id="setOcr"><option value="ben+eng" data-i18n-skip>বাংলা + English</option><option value="mar+eng+hin" data-i18n-skip>मराठी + हिन्दी + English</option><option value="urd+eng" data-i18n-skip>اردو + English</option><option value="eng+hin">हिन्दी + English</option><option value="eng">सिर्फ़ English (तेज़)</option><option value="hin">सिर्फ़ हिन्दी</option></select>
+        </label>
+        <label>मुझे कहकर बुलाएँ <input type="text" id="setCall" style="width:120px"></label>
+        <label class="chk"><input type="checkbox" id="setWake"> Screen जगा रखें (alarm के लिए)</label>
+        <button class="btn" id="notifBtn">🔔 Notification चालू करें</button>
+        <button class="btn ghost" id="testAlarm">⏰ Alarm test करें</button>
+        <p class="hint">Alarm तब बजता है जब Piyu का tab/app खुला हो। फ़ोन बंद होने पर भी बजाने के लिए 📅 Calendar बटन से alarm phone के calendar में डालें।</p>
+      </div>
+      <div class="card">
+        <h3>Data, Backup और Sync</h3>
+        <p class="hint" id="syncStatus">⚪ अभी sync नहीं हुआ</p>
+        <label>Sync token <input type="password" id="setToken" placeholder="सिर्फ़ --lan पर चाहिए" autocomplete="off" style="width:170px"></label>
+        <label class="nativeOnly" hidden>Piyu server <input type="url" id="setServer" placeholder="http://192.168.1.10:8080" autocomplete="off" style="width:190px"></label>
+        <div class="nativeOnly" hidden><button class="btn" id="nativePerm">🔔 फ़ोन अलार्म की अनुमति</button> <span class="hint" id="nativeInfo"></span></div>
+        <div class="nativeOnly" hidden><button class="btn" id="bgBattery">🔋 बैटरी: बिना रोक-टोक चलने दें</button> <span class="hint" id="bgInfo"></span></div>
+        <div class="nativeOnly" hidden><button class="btn danger" id="logoutBtn">🔒 Logout</button> <span class="hint">Logout तक Piyu पीछे (background) में चलती रहेगी</span></div>
+        <div class="nativeOnly" hidden><button class="btn" id="updCheck">🔄 अपडेट जाँचें</button> <span class="hint" id="updInfo"></span></div>
+        <button class="btn" id="syncBtn">🔄 अभी Sync करें</button>
+        <button class="btn" id="expBtn">⬇ Backup लें</button>
+        <label class="btn" style="display:inline-block;cursor:pointer">⬆ Backup वापस लाएँ<input type="file" id="impFile" accept=".json,application/json" hidden></label>
+        <p class="hint">Data इस device के IndexedDB में और आपके अपने Piyu server (data/ फ़ोल्डर) में रहता है — कोई cloud या paid API नहीं। दूसरे device से sync के लिए computer पर <b>./run.sh --lan</b> चलाएँ और फ़ोन से वही address खोलें; console में दिखा token यहाँ डालें।</p>
+        <button class="btn danger" id="resetBtn">सारे documents और काम मिटाएँ</button>
+      </div>
+    </section>
+  </main>
+
+  <nav>
+    <button data-tab="home" class="on"><i>🏠</i>Home</button>
+    <button data-tab="tasks"><i>✅</i>काम</button>
+    <button data-tab="docs"><i>📄</i>Docs</button>
+    <button data-tab="chat"><i>💬</i>Piyu</button>
+    <button data-tab="prog"><i>📊</i>प्रगति</button>
+    <button data-tab="set"><i>⚙️</i>Settings</button>
+  </nav>
+</div>
+
+<!-- ringing overlay -->
+<div id="ring" hidden>
+  <div class="ring-in">
+    <div class="orb big ringing"><i></i><i></i><i></i></div>
+    <small id="ringKind">⏰ अभी का काम</small>
+    <h2 id="ringTitle"></h2>
+    <p id="ringWhen"></p>
+    <div class="ring-btns">
+      <button class="btn primary xl" id="rDone">✔ हो गया</button>
+      <button class="btn xl" id="rHow">कैसे करूँ?</button>
+      <button class="btn ghost" id="rSnooze">5 मिनट बाद</button>
+      <button class="btn ghost" id="rStop">आवाज़ बंद</button>
+    </div>
+  </div>
+</div>
+
+<div id="guide" hidden>
+  <div class="guide-in">
+    <small id="gProg"></small>
+    <div class="prog big"><i id="gBar"></i></div>
+    <p id="gTask" class="gtask"></p>
+    <h2 id="gStep"></h2>
+    <div id="gMain" class="ring-btns">
+      <button class="btn primary xl" id="gDone">✔ हो गया, आगे</button>
+      <button class="btn" id="gRepeat">🔁 दोहराओ</button><button class="btn ghost" id="gBack">⏮ पीछे</button><button class="btn ghost" id="gSkip">⏭ छोड़ें</button><button class="btn ghost" id="gMic">🎤 बोलकर</button><button class="btn ghost" id="gExit">✖ रोकें</button>
+    </div>
+    <div id="gFin" class="ring-btns" hidden><button class="btn primary xl" id="gYes">✔ हाँ, काम पूरा</button><button class="btn" id="gNo">अभी नहीं</button><button class="btn ghost" onclick="guideBack()">⏮ पीछे</button></div>
+    <div id="gAns" class="hint" style="max-width:640px;white-space:pre-wrap;text-align:left"></div>
+    <form id="gForm"><input id="gIn" placeholder="या लिखिए: हो गया / दोबारा / पीछे / छोड़ो / रोको" autocomplete="off"></form>
+  </div>
+</div>
+
+<dialog id="howDlg">
+  <div class="dlg-h"><h3 id="howTitle"></h3><button class="x" data-close>✕</button></div>
+  <div id="howBody"></div>
+  <div class="dlg-f"><button class="btn primary" id="howSpeak">🔊 सुनाओ</button><button class="btn" id="howGuide">▶ Guide करो</button><button class="btn ghost" id="howStop">रोकें</button></div>
+</dialog>
+
+<dialog id="memDlg">
+  <div class="dlg-h"><h3>🧠 Piyu की याददाश्त</h3><button type="button" class="x" data-close>✕</button></div>
+  <div id="memBody"></div>
+  <div class="dlg-f"><button class="btn" id="memLearn">🌙 अभी सीखो</button><button class="btn danger" id="memForget">सब भूल जाओ</button></div>
+</dialog>
+
+<dialog id="focusDlg">
+  <div class="dlg-h"><h3>🎯 Focus mode</h3><button type="button" class="x" data-close>✕</button></div>
+  <p class="hint">इस दौरान सिर्फ़ P1/P2 काम टोकेंगे। बाकी रुके रहेंगे और focus खत्म होते ही एक-एक करके बताए जाएँगे। 10 मिनट वाली चेतावनियाँ चुप रहेंगी।</p>
+  <div class="dlg-f" style="flex-wrap:wrap"><button class="btn" data-min="15">15 मिनट</button><button class="btn" data-min="25">25 मिनट</button><button class="btn" data-min="50">50 मिनट</button><button class="btn" data-min="90">90 मिनट</button></div>
+  <label>या अपना समय (मिनट) <input type="number" id="focusMin" min="1" max="480" value="30"></label>
+  <div class="dlg-f"><button class="btn primary" id="focusGo">शुरू करें</button></div>
+</dialog>
+
+<dialog id="editDlg">
+  <form method="dialog" id="editForm">
+    <div class="dlg-h"><h3 id="editHead">काम</h3><button type="button" class="x" data-close>✕</button></div>
+    <label>काम<textarea id="eTitle" rows="3" required></textarea></label>
+    <label>Alarm का समय<input type="datetime-local" id="eWhen" required></label>
+    <label>प्रायोरिटी
+      <select id="ePri"><option value="1">🔥 अत्यावश्यक (P1)</option><option value="2">⬆ ज़रूरी (P2)</option><option value="3">सामान्य (P3)</option><option value="4">⬇ बाद में (P4)</option></select>
+    </label>
+    <label>पहले यह काम पूरा होना चाहिए
+      <select id="eDep"></select>
+    </label>
+    <label>दोहराव
+      <select id="eRep"><option value="">सिर्फ़ एक बार</option><option value="daily">रोज़ / हर कुछ दिन</option><option value="weekdays">सोम से शुक्र</option><option value="weekly">हर हफ्ते (दिन चुनें)</option><option value="monthly">हर महीने</option><option value="hours">हर कुछ घंटे</option></select>
+    </label>
+    <div id="eRepBox" hidden>
+      <label id="eEveryWrap">हर <input type="number" id="eEvery" min="1" max="365" value="1" style="width:90px;display:inline-block"> <span id="eUnit"></span></label>
+      <div id="eDays" class="days" hidden>
+        <label><input type="checkbox" value="1">सोम</label><label><input type="checkbox" value="2">मंगल</label><label><input type="checkbox" value="3">बुध</label><label><input type="checkbox" value="4">गुरु</label><label><input type="checkbox" value="5">शुक्र</label><label><input type="checkbox" value="6">शनि</label><label><input type="checkbox" value="0">रवि</label>
+      </div>
+      <label>इस तारीख़ तक (खाली = हमेशा)<input type="date" id="eUntil"></label>
+    </div>
+    <div class="dlg-f"><button class="btn primary" value="ok">सेव</button></div>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script src="i18n.js"></script>
+<script src="core.js"></script>
+<script src="store.js"></script>
+<script src="translit.js"></script>
+<script src="voicekit.js"></script>
+<script src="mind.js"></script>
+<script src="ocr.js"></script>
+<script src="native.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
