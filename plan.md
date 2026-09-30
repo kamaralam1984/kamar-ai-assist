@@ -283,3 +283,10 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - Each user has their own database (`DATA/users/<id>/`); registry `DATA/access.sqlite3` (mode 600). Brute-force lock (429), registration limit.
 - Files: `access.py`, `admin.html`, `server.py` (`/api/register`, `/api/me`, `/api/admin/*`), `app.js` (request-access dialog, device id, error codes), Java `deviceId()`.
 - Tests: `t23access.py` (66), `t23ui.js` (13).
+
+## Feature 22 — Real alarm ring (app minimised / phone locked)
+- Loud alarms are scheduled natively (`PiyuAlarm` → `AlarmManager.setAlarmClock`, survives Doze + reboot via `BootReceiver`). At the time, `AlarmReceiver` → `AlarmService` (foreground, mediaPlayback): looping alarm sound on the ALARM stream (volume rises slowly, raised to ≥70%), vibration, full-screen notification with Done / Snooze actions; auto-stops after 90 s and leaves a normal "missed" notification.
+- `AlarmActivity`: opens over the lock screen, turns the screen on; animated (pulsing rings, shaking bell, breathing Done button, fade/slide-in), big clock, task text, ✔ Done / 5-min Snooze / Stop.
+- Done / Snooze pressed while Piyu was closed are queued in prefs and applied to the tasks when the app opens (`N.pollActions`).
+- Quiet-hours (soft/silent) alarms stay normal notifications. Settings: "🔔 Alarm test करें", permission row "Lock screen पर alarm" (Android 14 full-screen-intent).
+- Checked on emulator: sound started with USAGE_ALARM with screen off, page opened, Done stopped sound and queued the action.

@@ -2,7 +2,7 @@
 import os, re, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__)); RES = HERE + '/android/app/src/main/res'; MAN = HERE + '/android/app/src/main/AndroidManifest.xml'
 m = open(MAN, encoding='utf-8').read()
-perms = ['android.permission.USE_EXACT_ALARM', 'android.permission.VIBRATE', 'android.permission.POST_NOTIFICATIONS', 'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.USE_FULL_SCREEN_INTENT', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE', 'android.permission.RECEIVE_BOOT_COMPLETED', 'android.permission.WAKE_LOCK', 'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', 'android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.CAMERA', 'android.permission.ACCESS_NETWORK_STATE']
+perms = ['android.permission.USE_EXACT_ALARM', 'android.permission.VIBRATE', 'android.permission.POST_NOTIFICATIONS', 'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.USE_FULL_SCREEN_INTENT', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE', 'android.permission.RECEIVE_BOOT_COMPLETED', 'android.permission.WAKE_LOCK', 'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', 'android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.CAMERA', 'android.permission.ACCESS_NETWORK_STATE', 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK', 'android.permission.DISABLE_KEYGUARD']
 for p in perms:
     if p not in m:
         m = m.replace('</manifest>', '    <uses-permission android:name="%s" />\n</manifest>' % p)
@@ -16,7 +16,12 @@ if 'android.speech.RecognitionService' not in m:
 </manifest>''', 1)
 if 'android:usesCleartextTraffic' not in m:
     m = m.replace('<application', '<application\n        android:usesCleartextTraffic="true"', 1)     # the Piyu server on your Wi-Fi is plain http
-if 'in.piyu.assistant.PiyuService' not in m and '.PiyuService' not in m:
+if '.AlarmService' not in m:
+    m = m.replace('</application>', '''    <receiver android:name=".AlarmReceiver" android:exported="false" />
+        <service android:name=".AlarmService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <activity android:name=".AlarmActivity" android:exported="false" android:launchMode="singleInstance" android:taskAffinity="" android:excludeFromRecents="true" android:showWhenLocked="true" android:turnScreenOn="true" android:screenOrientation="portrait" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+    </application>''', 1)
+if '.PiyuService' not in m:
     m = m.replace('</application>', '''    <service android:name=".PiyuService" android:exported="false" android:foregroundServiceType="specialUse" android:stopWithTask="false">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="personal assistant alarms and reminders that must keep running while the user is signed in" />
         </service>
@@ -32,7 +37,7 @@ open(MAN, 'w', encoding='utf-8').write(m)
 # native sources (background service, boot receiver, Capacitor plugin) + register the plugin in MainActivity
 import shutil
 JAVA = HERE + '/android/app/src/main/java/in/piyu/assistant'
-for f in ('PiyuService.java', 'BootReceiver.java', 'PiyuBackgroundPlugin.java'):
+for f in ('PiyuService.java', 'BootReceiver.java', 'PiyuBackgroundPlugin.java', 'PiyuAlarm.java', 'AlarmReceiver.java', 'AlarmService.java', 'AlarmActivity.java'):
     shutil.copy(HERE + '/native_src/' + f, JAVA + '/' + f)
 open(JAVA + '/MainActivity.java', 'w', encoding='utf-8').write('''package in.piyu.assistant;
 

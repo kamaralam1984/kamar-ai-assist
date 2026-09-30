@@ -39,6 +39,14 @@
   async function sync(plan) {
     if (!LN) return { added: 0, cancelled: 0 };
     await init();
+    /* loud alarms go to Piyu's own alarm clock (rings on the alarm volume, lights the screen, animated full-screen page); quiet / silent ones stay normal notifications */
+    if (BG && BG.alarmSync) {
+      try {
+        const loud = plan.filter(p => p.channelId === 'piyu_alarm');
+        await BG.alarmSync({ alarms: loud.map(p => ({ id: p.id, at: p.at, title: p.title, body: p.body, taskId: p.taskId, kind: p.kind, doneLbl: _t("✔ हो गया"), snoozeLbl: _t("5 मिनट बाद"), stopLbl: _t("बंद करें") })) });
+        N.nativeAlarms = true; plan = plan.filter(p => p.channelId !== 'piyu_alarm');
+      } catch (e) { N.lastError = String(e && e.message || e); }
+    }
     try {
       const pend = ((await LN.getPending()).notifications) || [];
       const want = new Map(plan.map(p => [p.id, p])), have = new Map(pend.map(n => [n.id, n]));
@@ -74,6 +82,7 @@
   N.perms = async () => {
     const o = { native: true };
     if (BG && BG.permStatus) { try { Object.assign(o, await BG.permStatus()); } catch (e) { } }
+    try { o.fullScreen = await N.fullScreenOk(); } catch (e) { }
     if (LN) {
       try { o.notif = (await LN.checkPermissions()).display; } catch (e) { }
       try { const x = await LN.checkExactNotificationSetting(); o.exact = x && x.exact_alarm; } catch (e) { }
@@ -86,6 +95,7 @@
       if (name === 'mic' || name === 'camera') await BG.permRequest({ name });
       else if (name === 'notif') await LN.requestPermissions();
       else if (name === 'exact') { if (LN.changeExactNotificationSetting) await LN.changeExactNotificationSetting(); }
+      else if (name === 'lock') await N.openFullScreenSettings();
       else if (name === 'battery') await BG.requestBatteryExemption();
       else if (name === 'volume') await BG.volumeUp();
     } catch (e) { N.lastError = String(e && e.message || e); }
@@ -108,6 +118,15 @@
   N.stopListening = async () => { if (BG) { try { await BG.speechStop(); } catch (e) { } } };
   N.deviceId = async () => { if (BG && BG.deviceId) { try { const r = await BG.deviceId(); return (r && r.id) || ''; } catch (e) { } } return ''; };
   N.openUrl = openUrl;
+  /* what the user pressed on a ringing alarm while Piyu was closed (Done / Snooze) -> applied to the task list */
+  N.pollActions = async () => {
+    if (!BG || !BG.alarmActions || !N.onAction) return;
+    try { const r = await BG.alarmActions(); (r.actions || []).forEach(a => { if (a.taskId && (a.action === 'done' || a.action === 'snooze')) N.onAction(a.taskId, a.action, a.kind); }); } catch (e) { }
+  };
+  N.testAlarm = async (seconds) => { if (!BG || !BG.alarmTest) return false; try { await BG.alarmTest({ seconds: seconds || 5, title: _t("⏰ Piyu का test alarm"), body: _t("Alarm ठीक से बज रहा है"), doneLbl: _t("✔ हो गया"), snoozeLbl: _t("5 मिनट बाद"), stopLbl: _t("बंद करें") }); return true; } catch (e) { return false; } };
+  N.fullScreenOk = async () => { if (!BG || !BG.fullScreenStatus) return true; try { return !!(await BG.fullScreenStatus()).allowed; } catch (e) { return true; } };
+  N.openFullScreenSettings = async () => { if (BG && BG.openFullScreenSettings) { try { await BG.openFullScreenSettings(); } catch (e) { } } };
+  if (isNative && root.document) { root.document.addEventListener('visibilitychange', () => { if (!root.document.hidden) N.pollActions(); }); setInterval(() => { if (!root.document.hidden) N.pollActions(); }, 5000); }
   N.init = init; N.requestPermissions = requestPermissions; N.permission = permission; N.sync = sync;
   root.PiyuNative = N;
   if (typeof module !== 'undefined' && module.exports) module.exports = N;

@@ -44,6 +44,9 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        <receiver android:name=".AlarmReceiver" android:exported="false" />
+        <service android:name=".AlarmService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <activity android:name=".AlarmActivity" android:exported="false" android:launchMode="singleInstance" android:taskAffinity="" android:excludeFromRecents="true" android:showWhenLocked="true" android:turnScreenOn="true" android:screenOrientation="portrait" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
     </application>
 
     <!-- Permissions -->
@@ -69,4 +72,6 @@
         <intent><action android:name="android.speech.RecognitionService" /></intent>
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
 </manifest>

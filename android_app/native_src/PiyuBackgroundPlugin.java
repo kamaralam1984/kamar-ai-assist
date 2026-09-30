@@ -69,6 +69,37 @@ public class PiyuBackgroundPlugin extends Plugin {
         call.resolve(o);
     }
 
+    /* ---------------- alarm clock (rings like a real alarm: sound on the alarm volume, lights the screen, full-screen animated page) ---------------- */
+    @PluginMethod public void alarmSync(PluginCall call) {
+        try { JSObject o = new JSObject(); o.put("count", PiyuAlarm.syncAll(getContext(), call.getArray("alarms", new JSArray()))); call.resolve(o); }
+        catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+    }
+    /** what the user pressed on a ringing alarm while the app was closed */
+    @PluginMethod public void alarmActions(PluginCall call) {
+        try { JSObject o = new JSObject(); o.put("actions", PiyuAlarm.takeActions(getContext())); call.resolve(o); } catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+    }
+    @PluginMethod public void alarmTest(PluginCall call) {
+        try {
+            org.json.JSONObject a = new org.json.JSONObject().put("id", 99001L).put("at", System.currentTimeMillis() + call.getInt("seconds", 5) * 1000L)
+                .put("title", call.getString("title", "⏰ Piyu test alarm")).put("body", call.getString("body", "Alarm theek se baj raha hai"))
+                .put("taskId", "").put("kind", "test").put("doneLbl", call.getString("doneLbl", "✔ Done")).put("snoozeLbl", call.getString("snoozeLbl", "Snooze 5 min")).put("stopLbl", call.getString("stopLbl", "Stop"));
+            PiyuAlarm.add(getContext(), a); call.resolve();
+        } catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+    }
+    /** Android 14+: is Piyu allowed to open the alarm page over the lock screen? */
+    @PluginMethod public void fullScreenStatus(PluginCall call) {
+        boolean ok = true;
+        try { if (Build.VERSION.SDK_INT >= 34) ok = ((android.app.NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE)).canUseFullScreenIntent(); } catch (Exception e) { }
+        JSObject o = new JSObject(); o.put("allowed", ok); call.resolve(o);
+    }
+    @PluginMethod public void openFullScreenSettings(PluginCall call) {
+        try {
+            Intent i = Build.VERSION.SDK_INT >= 34 ? new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + getContext().getPackageName())) : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); getContext().startActivity(i);
+        } catch (Exception e) { }
+        call.resolve();
+    }
+
     /* ---------------- permissions ---------------- */
     /** everything Piyu may need, in one answer: granted / denied / prompt for mic + camera, battery, volume */
     @PluginMethod public void permStatus(PluginCall call) { call.resolve(perms()); }

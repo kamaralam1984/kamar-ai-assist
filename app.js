@@ -1921,6 +1921,7 @@ function bindSettings() {
     $('#setServer').value = s.serverUrl || window.PIYU_DEFAULT_SERVER || '';
     $('#setServer').onchange = e => { s.serverUrl = e.target.value.trim(); save(); syncNow(true); detectNeural(); refreshAI(); refreshWeb(); };
     permInfo = async () => { const p = await PiyuNative.permission(); $('#nativeInfo').textContent = p === 'granted' ? _t("✅ फ़ोन अलार्म चालू — app बंद होने पर भी बजेंगे") : _t("⚠ अनुमति नहीं है — अलार्म बंद app में नहीं बजेंगे"); };
+    $('#alarmTest').onclick = async () => { const ok = await PiyuNative.testAlarm(8); toast(ok ? _t('8 सेकंड में test alarm बजेगा — app को minimise कर दीजिए') : _t('यह सुविधा इस app-version में नहीं है — app update करें')); };
     $('#nativePerm').onclick = async () => { await PiyuNative.requestPermissions(); await permInfo(); nativeNow(); };
     permInfo(); $('#permCard').hidden = false; renderPerms();
     const bgInfo = async () => { const st = await PiyuNative.bgStatus(); $('#bgInfo').textContent = !st ? '' : (st.wanted ? '✅ ' + _t('background में चालू') : '⚠ ' + _t('background बंद')) + ' · ' + (st.batteryExempt ? '🔋 ' + _t('बैटरी: बिना रोक') : '⚠ ' + _t('बैटरी: सीमित (alarm देर से बज सकते हैं)')); };
@@ -1987,6 +1988,7 @@ const PERM_ROWS = [
   { k: 'volume', icon: '🔊', name: 'Speaker / आवाज़', why: 'Piyu की आवाज़ सुनने के लिए (phone का media volume चालू होना चाहिए)', ok: p => !(p.volume === 0), btn: 'आवाज़ बढ़ाएँ', note: p => p.volumeMax ? ' · volume ' + p.volume + '/' + p.volumeMax : '' },
   { k: 'notif', icon: '🔔', name: 'Notifications', why: 'alarm और याद दिलाने के लिए', ok: p => p.notif === undefined || p.notif === 'granted', need: true },
   { k: 'exact', icon: '⏰', name: 'सटीक Alarm', why: 'ठीक समय पर alarm बजाने के लिए', ok: p => p.exact === undefined || p.exact === 'granted', need: true },
+  { k: 'lock', icon: '📱', name: 'Lock screen पर alarm', why: 'phone lock हो तब भी alarm का पूरा screen खुले', ok: p => p.fullScreen === undefined || !!p.fullScreen, need: true },
   { k: 'battery', icon: '🔋', name: 'Battery: बिना रोक', why: 'phone सोने पर भी Piyu चलती रहे', ok: p => p.batteryExempt === undefined || !!p.batteryExempt, need: true },
   { k: 'camera', icon: '📷', name: 'Camera', why: 'photo खींचकर काम से जोड़ने के लिए', ok: p => p.camera === 'granted' }
 ];
@@ -2008,7 +2010,7 @@ async function renderPerms() {
   box.innerHTML = PERM_ROWS.map(r => { const ok = r.ok(p); return `<div class="prow"><span>${r.icon} <b>${esc(_t(r.name))}</b><small>${esc(_t(r.why))}${r.note ? esc(r.note(p)) : ''}</small></span><span>${ok ? '✅' : `<button class="btn sm" data-perm="${r.k}">${esc(_t(r.btn || 'अनुमति दें'))}</button>`}</span></div>`; }).join('');
   box.querySelectorAll('[data-perm]').forEach(b => b.onclick = async () => { await askPerm(b.dataset.perm); renderPerms(); });
 }
-async function askAllPerms() { for (const k of ['mic', 'notif', 'exact', 'battery', 'camera']) { const row = PERM_ROWS.find(r => r.k === k); if (!row.ok(await refreshPerms())) { await askPerm(k); await sleep(400); } } if ((await refreshPerms()).volume === 0) await PiyuNative.ask('volume'); renderPerms(); nativeNow(); }
+async function askAllPerms() { for (const k of ['mic', 'notif', 'exact', 'lock', 'battery', 'camera']) { const row = PERM_ROWS.find(r => r.k === k); if (!row.ok(await refreshPerms())) { await askPerm(k); await sleep(400); } } if ((await refreshPerms()).volume === 0) await PiyuNative.ask('volume'); renderPerms(); nativeNow(); }
 async function permsOnboard() {           // right after sign-in / start: one clear explanation, then the system asks one by one
   if (!isNativeApp() || !PiyuNative.bgAvailable) return;
   const p = await refreshPerms(); const miss = PERM_ROWS.filter(r => r.need && !r.ok(p));
@@ -2080,7 +2082,7 @@ $('#startBtn').onclick = async () => {
       const t = S.tasks.find(x => x.id === id); if (!t) return;
       if (act === 'done') markDone(t); else if (act === 'snooze') snooze(t, 5);
     };
-    PiyuNative.init().then(() => { permInfo(); nativeNow(); });      // permissions are asked by the one clear dialog (permsOnboard) and by Settings → 🔐 अनुमतियाँ
+    PiyuNative.init().then(() => { permInfo(); nativeNow(); PiyuNative.pollActions(); });      // permissions are asked by the one clear dialog (permsOnboard) and by Settings → 🔐 अनुमतियाँ
     setInterval(nativeNow, 300000);
     setTimeout(checkAppUpdate, 6000); setInterval(checkAppUpdate, 6 * 3600e3);
   }
