@@ -14,6 +14,7 @@ from urllib.parse import urlparse, parse_qs
 
 import db
 import web
+import access
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT)
@@ -37,7 +38,7 @@ CORS_ORIGINS = {o.strip() for o in os.environ.get('PIYU_CORS', 'http://localhost
 MAX_LOADED = int(os.environ.get('PIYU_MAX_VOICES', '3'))   # RAM guard: each loaded voice is ~150-300 MB
 MAX_BODY = 200 * 1024 * 1024
 BLOB_ID = re.compile(r'^[A-Za-z0-9_-]{1,80}$')
-HIDDEN = re.compile(r'^/(data|\.venv|voices|deploy|__pycache__)(/|$)|^/(server|db)\.py$|\.sqlite3', re.I)
+HIDDEN = re.compile(r'^/(data|\.venv|voices|deploy|__pycache__)(/|$)|^/(server|db)\.py$|\.sqlite3|\.md$|\.sh$|\.py$|^/(run|README)', re.I)
 
 OLLAMA = os.environ.get('PIYU_OLLAMA', 'http://127.0.0.1:11434').rstrip('/')
 AI_SLOTS = threading.BoundedSemaphore(2)          # at most 2 answers being generated at once
@@ -50,6 +51,42 @@ try:
 except Exception as e:
     PiperVoice = None
     print('Piper nahi mila (', e, ') — browser ki awaaz use hogi.')
+
+
+ACC = None                      # access.Access — created at start-up; used only when an owner token (PIYU_TOKEN) exists
+_FAILS, _REGS, _DBS = {}, {}, set()
+_fl = threading.Lock()
+
+
+def fail_blocked(ip, limit=12, per=600):
+    now = time.time()
+    with _fl:
+        _FAILS[ip] = [t for t in _FAILS.get(ip, []) if now - t < per]
+        return len(_FAILS[ip]) >= limit
+
+
+def fail_add(ip):
+    with _fl:
+        _FAILS.setdefault(ip, []).append(time.time())
+        if len(_FAILS) > 5000:
+            _FAILS.clear()
+
+
+def reg_ok(ip, limit=5, per=3600):
+    now = time.time()
+    with _fl:
+        _REGS[ip] = [t for t in _REGS.get(ip, []) if now - t < per]
+        if len(_REGS[ip]) >= limit:
+            return False
+        _REGS[ip].append(now)
+        return True
+
+
+def dbpath_ready(path):
+    if path not in _DBS:
+        db.init(path)
+        _DBS.add(path)
+    return path
 
 
 def token():
@@ -182,7 +219,7 @@ class H(SimpleHTTPRequestHandler):
         o = self.headers.get('Origin')
         if o and o in CORS_ORIGINS:
             self.send_header('Access-Control-Allow-Origin', o); self.send_header('Vary', 'Origin')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Content-Encoding, X-Piyu-Token'); self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Content-Encoding, X-Piyu-Token, X-Piyu-Device'); self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
 
     def end_headers(self):
         self.cors()
@@ -205,9 +242,34 @@ class H(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def authed(self):
+    def resolve(self):
+        """-> (ctx, None) or (None, reason).  ctx = {role: owner|user, uid, db, name}"""
         t = token()
-        return (not t) or hmac.compare_digest(self.headers.get('X-Piyu-Token', ''), t)
+        if not t:                                                        # no owner token: a private local server, everything open
+            return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': 'owner'}, None
+        ip = self.client_ip()
+        if fail_blocked(ip):
+            return None, 'locked'
+        hdr = self.headers.get('X-Piyu-Token', '')
+        if not hdr:
+            return None, 'token'
+        if hmac.compare_digest(hdr, t):
+            return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': 'owner'}, None
+        u, err = ACC.authorize(hdr, self.headers.get('X-Piyu-Device', ''), ip)
+        if err:
+            if err == 'token':
+                fail_add(ip)
+            return None, err
+        return {'role': 'user', 'uid': u['id'], 'db': dbpath_ready(ACC.user_db(u['id'])), 'name': u['name']}, None
+
+    def authed(self):
+        self.ctx, self.authErr = self.resolve()
+        return self.ctx is not None
+
+    def deny(self, err=None):
+        err = err or getattr(self, 'authErr', 'token')
+        code = {'token': 401, 'pending': 403, 'revoked': 403, 'device': 403, 'locked': 429}.get(err, 401)
+        return self.send_json(code, {'error': err})
 
     def read_body(self):
         n = int(self.headers.get('Content-Length', 0) or 0)
@@ -230,10 +292,21 @@ class H(SimpleHTTPRequestHandler):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path == '/api/health':
-            return self.send_json(200, {'ok': True, 'db': os.path.basename(DBPATH), 'auth': bool(token())})
+            return self.send_json(200, {'ok': True, 'db': os.path.basename(DBPATH), 'auth': bool(token()), 'multiuser': bool(token())})
+        if u.path == '/api/register' and method == 'POST':
+            return self.register()
+        if u.path == '/api/register/status' and method == 'GET':
+            if not rate_ok(self.client_ip(), 60, 60):
+                return self.send_json(429, {'error': 'slow down'})
+            return self.send_json(200, {'status': ACC.status_for_device(q.get('device', [''])[0]) if token() else 'none'})
         if not self.authed():
-            return self.send_json(401, {'error': 'token'})
-        con = db.connect(DBPATH)
+            return self.deny()
+        ctx = self.ctx
+        if u.path == '/api/me':
+            return self.send_json(200, {'role': ctx['role'], 'name': ctx['name'], 'uid': ctx['uid']})
+        if u.path.startswith('/api/admin/'):
+            return self.admin(method, u.path, ctx)
+        con = db.connect(ctx['db'])
         try:
             if u.path == '/api/state':
                 if method == 'GET':
@@ -299,6 +372,65 @@ class H(SimpleHTTPRequestHandler):
             return self.send_json(404, {'error': 'unknown'})
         finally:
             con.close()
+
+    def register(self):
+        if not token():
+            return self.send_json(400, {'error': 'no-multiuser'})
+        if not reg_ok(self.client_ip()):
+            return self.send_json(429, {'error': 'too-many'})
+        body = self.read_body()
+        try:
+            req = json.loads(body or b'{}')
+            assert isinstance(req, dict)
+        except Exception:
+            return self.send_json(400, {'error': 'json'})
+        u, err = ACC.register(req.get('name'), req.get('phone'), req.get('device'), self.client_ip())
+        if err:
+            return self.send_json(400 if err != 'full' else 503, {'error': err})
+        return self.send_json(200, {'ok': True, 'status': u['status']})        # the token is NEVER returned here: only the owner can give it
+
+    def admin(self, method, path, ctx):
+        if ctx['role'] != 'owner' or not token():
+            return self.send_json(403, {'error': 'owner-only'})
+        def card(u):
+            st = {}
+            try:
+                p = ACC.user_db(u['id'])
+                if os.path.exists(p):
+                    c = db.connect(p)
+                    try:
+                        s = db.read_state(c)
+                    finally:
+                        c.close()
+                    st = {'tasks': len(s.get('tasks', [])), 'docs': len(s.get('docs', [])), 'bytes': os.path.getsize(p)}
+            except Exception:
+                pass
+            return {'id': u['id'], 'name': u['name'], 'phone': u['phone'], 'token': u['token'], 'status': u['status'], 'created': u['created'], 'approved': u['approved'],
+                    'bound': u['bound'], 'device': (u['device_hash'] or '')[:8], 'lastSeen': u['last_seen'], 'lastIp': u['last_ip'], 'note': u['note'], 'stats': st}
+        if path == '/api/admin/users' and method == 'GET':
+            us = ACC.list()
+            return self.send_json(200, {'users': [card(u) for u in us], 'pending': sum(1 for u in us if u['status'] == 'pending'), 'now': int(time.time() * 1000)})
+        if path == '/api/admin/users' and method == 'POST':
+            try:
+                req = json.loads(self.read_body() or b'{}')
+            except Exception:
+                return self.send_json(400, {'error': 'json'})
+            u = ACC.add(req.get('name'), req.get('phone'))
+            return self.send_json(200, {'user': card(u)}) if u else self.send_json(400, {'error': 'name'})
+        m = re.match(r'^/api/admin/users/(\d+)/(approve|revoke|restore|reset|regen|delete|note)$', path)
+        if m and method == 'POST':
+            uid, act = int(m.group(1)), m.group(2)
+            if act == 'note':
+                try:
+                    ACC.note(uid, json.loads(self.read_body() or b'{}').get('note', ''))
+                except Exception:
+                    return self.send_json(400, {'error': 'json'})
+                return self.send_json(200, {'ok': True})
+            r = ACC.act(uid, act)
+            if r is None:
+                return self.send_json(404, {'error': 'none'})
+            return self.send_json(200, {'deleted': True} if act == 'delete' else {'user': card(r)})
+        return self.send_json(404, {'error': 'unknown'})
 
     def ai_chat(self, con):
         body = self.read_body()
@@ -510,11 +642,15 @@ class H(SimpleHTTPRequestHandler):
             return self.api('GET')
         if HIDDEN.search(u.path):
             return self.send_json(404, {'error': 'hidden'})
+        if u.path in ('/admin', '/admin/'):
+            if not self.static('/admin.html'):
+                self.send_json(404, {'error': 'no admin page'})
+            return
         if u.path != '/tts' and self.static(u.path):
             return
         if u.path == '/tts':
             if not self.authed():
-                return self.send_json(401, {'error': 'token'})
+                return self.deny()
             if not rate_ok(self.client_ip()):
                 return self.send_json(429, {'error': 'slow down'})
             q = parse_qs(u.query)
@@ -576,6 +712,7 @@ if __name__ == '__main__':
             sys.exit('RUKO: public host par token ke bina server nahi chalega. PIYU_TOKEN set karein ya --lan use karein.')
     if not public and os.path.exists(TOKF) and not os.environ.get('PIYU_TOKEN'):
         os.remove(TOKF)
+    ACC = access.Access(DATA)
     db.init(DBPATH)
     con = db.connect(DBPATH)
     if db.migrate_json(con, os.path.join(DATA, 'state.json')):

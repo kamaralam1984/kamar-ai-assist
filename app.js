@@ -83,7 +83,17 @@ function save() {
 
 /* ---------- sync with server.py (same Wi-Fi / same computer) ---------- */
 let syncT = null, syncing = false, syncInfo = { ok: null, at: 0, msg: 'अभी sync नहीं हुआ' };
-const hdrs = () => S.settings.token ? { 'X-Piyu-Token': S.settings.token } : {};
+/* device identity: a random secret made once per phone/browser. In the Android app it comes from the phone itself (ANDROID_ID, hashed) so it survives re-installs.
+   A user token binds to the FIRST device that uses it: every request carries this id next to the token. */
+const randHex = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join('');
+let DEVICE = ''; try { DEVICE = localStorage.getItem('piyu.device') || ''; } catch (e) { }
+if (!/^[0-9a-f]{32,}$/.test(DEVICE)) { DEVICE = randHex(24); try { localStorage.setItem('piyu.device', DEVICE); } catch (e) { } }
+const deviceReady = (async () => { try { if (window.PiyuNative && PiyuNative.isNative && PiyuNative.deviceId) { const id = await PiyuNative.deviceId(); if (id) DEVICE = await sha256hex('piyu-android:' + id); } } catch (e) { } })();
+async function sha256hex(t) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+const hdrs = () => S.settings.token ? { 'X-Piyu-Token': S.settings.token, 'X-Piyu-Device': DEVICE } : {};
+const DEV_ONLY = ['token', 'pinHash', 'loggedIn', 'serverUrl'];           // belong to this phone only: never sent to the server
+const stateOut = () => { const c = Object.assign({}, S); c.settings = Object.assign({}, S.settings); DEV_ONLY.forEach(k => delete c.settings[k]); return c; };
+let ME = {};
 /* the Android app is served from the phone itself, so it needs the address of the Piyu server (device setting, empty in a browser) */
 const serverBase = () => String(S.settings.serverUrl || window.PIYU_DEFAULT_SERVER || '').replace(/\/+$/, '');   // APK: the address is built in (Settings can override it)
 const U = p => serverBase() + p;
@@ -95,23 +105,68 @@ async function fetchT(url, opts, ms) {
   try { return await fetch(U(url), Object.assign({}, opts, { signal: ac.signal })); } finally { clearTimeout(id); }
 }
 let syncFails = 0, tokenAsked = false;
-function askToken() {
+const ACCESS_MSG = {
+  token: 'Token चाहिए (Settings → Sync token)',
+  pending: 'Owner की मंज़ूरी बाकी है — Owner से token लेकर यहाँ डालिए',
+  revoked: 'आपका access बंद कर दिया गया है — Owner से बात कीजिए',
+  device: 'यह token किसी दूसरे phone से जुड़ चुका है — Owner से "Device reset" करवाइए',
+  locked: 'बहुत ज़्यादा ग़लत कोशिशें — थोड़ी देर बाद फिर कीजिए'
+};
+function accessProblem(code) {
+  code = ACCESS_MSG[code] ? code : 'token';
+  syncInfo = { ok: false, at: Date.now(), msg: ACCESS_MSG[code], access: code };
+  if (!tokenAsked) { tokenAsked = true; setTimeout(() => askToken(code), 400); }      // ask once per start; the red banner stays until it is fixed
+}
+function askToken(code) {
   const dlg = $('#tokDlg'); if (!dlg || dlg.open) return;
-  $('#tokIn').value = ''; $('#tokMsg').textContent = '';
+  $('#tokIn').value = ''; $('#tokMsg').textContent = (typeof code === 'string' && code !== 'token' && ACCESS_MSG[code]) ? '⚠ ' + _t(ACCESS_MSG[code]) : '';
+  try { $('#reqName').value = localStorage.getItem('piyu.reqName') || ''; $('#reqPhone').value = localStorage.getItem('piyu.reqPhone') || ''; } catch (e) { }
+  $('#reqMsg').textContent = ''; if (localStorage.getItem('piyu.req')) { checkReg(); clearInterval(regTimer); regTimer = setInterval(() => { if (!$('#tokDlg').open) clearInterval(regTimer); else checkReg(); }, 15000); }
   try { dlg.showModal(); } catch (e) { const t = prompt(_t('इस server का Sync token डालें (जो सिर्फ़ आपको पता है)'), ''); if (t) applyToken(t); return; }
   setTimeout(() => $('#tokIn').focus(), 200);
 }
+let regTimer = null;
+async function verifyToken(t) {           // -> {ok, code}.  /api/me also binds the token to THIS device when it is the first one to use it
+  try {
+    const r = await fetchT('/api/me', { headers: { 'X-Piyu-Token': t, 'X-Piyu-Device': DEVICE }, cache: 'no-store' }, 12000);
+    if (r.ok) return { ok: true, me: await r.json() };
+    let c = 'token'; try { c = (await r.json()).error || 'token'; } catch (e) { } if (r.status === 429) c = 'locked';
+    return { ok: false, code: c };
+  } catch (e) { return { ok: false, code: 'net' }; }
+}
+const tokenProblemText = c => c === 'net' ? _t('server तक नहीं पहुँच पा रही — इंटरनेट जाँचें') : c === 'token' ? _t('Token सही नहीं है') : _t(ACCESS_MSG[c] || ACCESS_MSG.token);
 async function applyToken(t) {
   t = String(t || '').trim(); if (!t) return false;
-  try {
-    const r = await fetchT('/api/state?since=-1', { headers: { 'X-Piyu-Token': t }, cache: 'no-store' }, 12000);
-    if (r.status === 401) { $('#tokMsg').textContent = _t('Token सही नहीं है'); return false; }
-  } catch (e) { $('#tokMsg').textContent = _t('server तक नहीं पहुँच पा रही — इंटरनेट जाँचें'); return false; }
-  S.settings.token = t; save(); const el = document.getElementById('setToken'); if (el) el.value = t;
-  if ($('#tokDlg').open) $('#tokDlg').close();
-  toast(_t('✅ Token सही है — अब आवाज़ और sync चलेंगे')); await syncNow(true); detectNeural(); refreshAI(); refreshWeb(); showSync();
+  const v = await verifyToken(t);
+  if (!v.ok) { $('#tokMsg').textContent = '⚠ ' + tokenProblemText(v.code); return false; }
+  ME = v.me || {}; S.settings.token = t; save(); const el = document.getElementById('setToken'); if (el) el.value = t;
+  if ($('#tokDlg').open) $('#tokDlg').close(); clearInterval(regTimer); tokenAsked = false;
+  toast(_t('✅ Token सही है — अब आवाज़ और sync चलेंगे')); await syncNow(true); detectNeural(); refreshAI(); refreshWeb(); showSync(); showAdminLink();
   return true;
 }
+async function requestAccess() {
+  const name = $('#reqName').value.trim(), phone = $('#reqPhone').value.trim(), m = $('#reqMsg');
+  if (name.length < 2) { m.textContent = '⚠ ' + _t('अपना नाम लिखिए'); return; }
+  m.textContent = '⏳ …';
+  try {
+    const r = await fetchT('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, device: DEVICE }) }, 12000);
+    if (r.status === 429) { m.textContent = '⚠ ' + _t('बहुत बार कोशिश हो चुकी — थोड़ी देर बाद फिर कीजिए'); return; }
+    if (!r.ok) { m.textContent = '⚠ ' + _t('नाम या जानकारी ठीक नहीं है'); return; }
+    try { localStorage.setItem('piyu.req', '1'); localStorage.setItem('piyu.reqName', name); localStorage.setItem('piyu.reqPhone', phone); } catch (e) { }
+    m.textContent = '✅ ' + _t('Request Owner को भेज दी गई। Owner से phone / WhatsApp पर token माँगिए, फिर ऊपर डालिए।');
+    clearInterval(regTimer); regTimer = setInterval(() => { if (!$('#tokDlg').open) clearInterval(regTimer); else checkReg(); }, 15000);
+  } catch (e) { m.textContent = '⚠ ' + _t('server तक नहीं पहुँच पा रही — इंटरनेट जाँचें'); }
+}
+async function checkReg() {
+  const m = $('#reqMsg');
+  try {
+    const st = (await (await fetchT('/api/register/status?device=' + encodeURIComponent(DEVICE), { cache: 'no-store' }, 10000)).json()).status;
+    m.textContent = st === 'pending' ? '⏳ ' + _t('Owner की मंज़ूरी का इंतज़ार है') : (st === 'approved' || st === 'active') ? '✅ ' + _t('Owner ने मंज़ूर कर दिया — उनसे token लेकर ऊपर डालिए') : st === 'revoked' ? '⛔ ' + _t(ACCESS_MSG.revoked) : '';
+  } catch (e) { }
+}
+async function loadMe() { try { const r = await fetchT('/api/me', { headers: hdrs(), cache: 'no-store' }, 8000); if (r.ok) { ME = await r.json(); showAdminLink(); } } catch (e) { } }
+function showAdminLink() { const row = $('#adminRow'); if (!row) return; row.hidden = ME.role !== 'owner'; const a = $('#adminLink'); if (a) { a.href = serverBase() + '/admin'; a.onclick = e => { if (isNativeApp() && PiyuNative.openUrl) { e.preventDefault(); PiyuNative.openUrl(a.href); } }; } }
+$('#reqSend').onclick = requestAccess; $('#reqCheck').onclick = checkReg;
 $('#tokOk').onclick = () => applyToken($('#tokIn').value);
 $('#tokIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyToken($('#tokIn').value); } });
 $('#tokLater').onclick = () => $('#tokDlg').close();
@@ -123,10 +178,9 @@ async function syncNow(manual) {
     for (let attempt = 0; attempt < 5 && !done; attempt++) {
       const quick = lastRev && syncedSeq === dirtySeq;      // nothing changed here: just ask whether anything changed there (tiny reply)
       const r = await fetchT('/api/state' + (quick ? '?since=' + lastRev : ''), { headers: hdrs(), cache: 'no-store' }, 20000);
-      if (r.status === 401) {
-        syncInfo = { ok: false, at: Date.now(), msg: "Token चाहिए (Settings → Sync token)" }; done = true;
-        if (!tokenAsked) { tokenAsked = true; setTimeout(askToken, 400); }      // a protected server without a token (browser or phone): ask for it — once per start, the red banner stays until it is set
-        break;
+      if (r.status === 401 || r.status === 403 || r.status === 429) {
+        let code = 'token'; try { code = (await r.json()).error || 'token'; } catch (e) { } if (r.status === 429) code = 'locked';
+        accessProblem(code); done = true; break;
       }
       if (!r.ok) throw new Error('http ' + r.status);
       const j = await r.json();
@@ -137,7 +191,7 @@ async function syncNow(manual) {
       if (changed) { dirtySeq++; snapshot(); await Store.save(S); render(); }
       stamp();
       const mark = dirtySeq;
-      let body = JSON.stringify({ baseRev: rev, state: S }), hd = Object.assign({ 'Content-Type': 'application/json' }, hdrs());
+      let body = JSON.stringify({ baseRev: rev, state: stateOut() }), hd = Object.assign({ 'Content-Type': 'application/json' }, hdrs());
       if (body.length > 4000 && typeof CompressionStream !== 'undefined') {        // state uploads are text: ~5x smaller on the wire
         try { body = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob(); hd['Content-Encoding'] = 'gzip'; } catch (e) { }
       }
@@ -145,6 +199,7 @@ async function syncNow(manual) {
       if (p.status === 409) { await sleep(150 + Math.random() * 300); continue; }   // someone else saved first: fetch, merge again
       if (!p.ok) throw new Error('put ' + p.status);
       try { const pj = await p.json(); lastRev = pj.rev || 0; if (dirtySeq === mark) syncedSeq = mark; } catch (e) { }
+      if (!ME.role) loadMe();
       syncInfo = { ok: true, at: Date.now(), msg: "Sync हो गया" }; syncFails = 0; done = true;
       uploadBlobs().then(pullBlobs);
     }
@@ -158,7 +213,7 @@ async function syncNow(manual) {
   syncing = false; showSync();
 }
 function showSync() {
-  const b = $('#tokBanner'); if (b) b.hidden = !(syncInfo.ok === false && /Token/.test(syncInfo.msg));
+  const b = $('#tokBanner'); if (b) { b.hidden = !(syncInfo.ok === false && syncInfo.access); if (!b.hidden) b.textContent = '🔑 ' + _t(ACCESS_MSG[syncInfo.access] || ACCESS_MSG.token) + ' (' + _t('यहाँ दबाइए') + ')'; }
   const el = $('#syncStatus'); if (!el) return;
   el.textContent = (syncInfo.ok ? '🟢 ' : syncInfo.ok === false ? '🟠 ' : '⚪ ') + _t(syncInfo.msg) + (syncInfo.at ? ' · ' + hm(syncInfo.at) : '');
 }
@@ -411,6 +466,7 @@ async function voiceDiag() {
   try { r = await fetchT('/tts?lang=' + (S.settings.lang === 'en' ? 'en' : 'hi') + '&text=' + encodeURIComponent(_t('जाँच')) + '&nocache=' + Date.now(), { headers: hdrs(), cache: 'no-store' }, 15000); }
   catch (e) { return say_('❌ ' + _t('आवाज़ का जवाब नहीं आया — इंटरनेट धीमा या बंद है')); }
   if (r.status === 401) return say_('🔑 ' + _t('Sync token खाली या ग़लत है — Settings → Sync token में सही token डालें'));
+  if (r.status === 403) { let c = 'device'; try { c = (await r.json()).error; } catch (e) { } return say_('🔑 ' + _t(ACCESS_MSG[c] || ACCESS_MSG.device)); }
   if (!r.ok) return say_('❌ ' + _t('server ने आवाज़ नहीं दी (कोड {0})', [r.status]));
   const a = audio(); if (!a) return say_('❌ ' + _t('इस phone का audio चालू नहीं हो पा रहा'));
   try { await a.resume(); } catch (e) { }
@@ -1985,11 +2041,9 @@ $('#pinForgot').onclick = async () => {
   const tk = $('#loginToken'), msg = $('#loginMsg');
   if (tk.hidden) { tk.hidden = false; tk.placeholder = _t('Sync token डालकर PIN हटाएँ'); tk.focus(); msg.textContent = _t('Sync token डालें, फिर यही बटन दोबारा दबाएँ'); return; }
   const t = tk.value.trim(); if (!t) return;
-  try {
-    const r = await fetchT('/api/state?since=-1', { headers: { 'X-Piyu-Token': t }, cache: 'no-store' }, 10000);
-    if (r.ok) { S.settings.token = t; S.settings.pinHash = ''; S.settings.loggedIn = false; save(); tk.value = ''; tk.hidden = true; loginUI(); msg.textContent = _t('PIN हटा दिया — नया PIN बनाइए (या खाली छोड़कर Login दबाइए)'); return; }
-  } catch (e) { }
-  msg.textContent = _t('Token सही नहीं है');
+  const v = await verifyToken(t);
+  if (v.ok) { S.settings.token = t; ME = v.me || {}; S.settings.pinHash = ''; S.settings.loggedIn = false; save(); tk.value = ''; tk.hidden = true; loginUI(); msg.textContent = _t('PIN हटा दिया — नया PIN बनाइए (या खाली छोड़कर Login दबाइए)'); return; }
+  msg.textContent = '⚠ ' + tokenProblemText(v.code); return;
 };
 async function nativeLogin() {       // true = may open the app
   if (!isNativeApp()) return true;
@@ -1997,7 +2051,8 @@ async function nativeLogin() {       // true = may open the app
   if (s.loggedIn && !s.pinHash) return true;
   if (s.loggedIn) { if ((await sha(pin)) === s.pinHash) return true; $('#loginMsg').textContent = _t('PIN ग़लत है'); $('#loginPin').value = ''; $('#loginPin').focus(); return false; }
   if (pin && !/^\d{4,6}$/.test(pin)) { $('#loginMsg').textContent = _t('PIN 4 से 6 अंकों का होना चाहिए'); return false; }
-  const tk = ($('#loginToken').value || '').trim(); if (tk) s.token = tk;
+  const tk = ($('#loginToken').value || '').trim();
+  if (tk) { const v = await verifyToken(tk); if (!v.ok) { $('#loginMsg').textContent = '⚠ ' + tokenProblemText(v.code); return false; } s.token = tk; ME = v.me || {}; }
   s.loggedIn = true; s.pinHash = pin ? await sha(pin) : ''; save(); return true;
 }
 async function bgOn() {
@@ -2008,7 +2063,7 @@ async function bgOn() {
 ['loginPin', 'loginToken'].forEach(id => { const el = document.getElementById(id); if (!el) return; el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#startBtn').click(); } }); el.addEventListener('focus', () => setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)); el.addEventListener('input', () => { $('#loginMsg').textContent = ''; }); });
 $('#loginPin').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 6); });
 $('#startBtn').onclick = async () => {
-  await storeReady;
+  await storeReady; await deviceReady;
   if (!(await nativeLogin())) return;
   bgOn(); permsOnboard(); refreshPerms();
   await detectNeural();

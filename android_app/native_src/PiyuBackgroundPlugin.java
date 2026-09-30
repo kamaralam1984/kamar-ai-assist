@@ -62,6 +62,13 @@ public class PiyuBackgroundPlugin extends Plugin {
         call.resolve(o);
     }
 
+    /** a stable id of this phone (ANDROID_ID: survives re-installs of the same app): a user token is bound to it */
+    @PluginMethod public void deviceId(PluginCall call) {
+        JSObject o = new JSObject();
+        try { o.put("id", Settings.Secure.getString(getContext().getContentResolver(), Settings.Secure.ANDROID_ID)); } catch (Exception e) { o.put("id", ""); }
+        call.resolve(o);
+    }
+
     /* ---------------- permissions ---------------- */
     /** everything Piyu may need, in one answer: granted / denied / prompt for mic + camera, battery, volume */
     @PluginMethod public void permStatus(PluginCall call) { call.resolve(perms()); }

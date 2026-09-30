@@ -106,6 +106,7 @@
     try { await BG.speechStart({ lang }); } catch (e) { off(); h.error && h.error(String(e && e.message || e)); }
   };
   N.stopListening = async () => { if (BG) { try { await BG.speechStop(); } catch (e) { } } };
+  N.deviceId = async () => { if (BG && BG.deviceId) { try { const r = await BG.deviceId(); return (r && r.id) || ''; } catch (e) { } } return ''; };
   N.openUrl = openUrl;
   N.init = init; N.requestPermissions = requestPermissions; N.permission = permission; N.sync = sync;
   root.PiyuNative = N;

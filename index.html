@@ -34,11 +34,20 @@
 </dialog>
 <div id="tokBanner" hidden role="button" tabindex="0">🔑 Sync token डालें — इसके बिना आवाज़ और sync नहीं चलेंगे (यहाँ दबाइए)</div>
 <dialog id="tokDlg">
-  <h3>🔑 Sync token</h3>
-  <p class="hint">यह आपके Piyu server का token है (जो सिर्फ़ आपको पता है)। इसके बिना Piyu की आवाज़ और sync नहीं चलेंगे।</p>
-  <input id="tokIn" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="token यहाँ चिपकाएँ / लिखें">
+  <h3>🔑 Piyu access</h3>
+  <p class="hint">Piyu चलाने के लिए Owner से मिला token चाहिए। यह token सिर्फ़ उसी phone पर चलेगा जिस पर आप इसे पहली बार डालेंगे।</p>
   <div class="hint" id="tokMsg" role="status"></div>
-  <div class="btns"><button type="button" class="btn primary" id="tokOk">ठीक है</button><button type="button" class="btn ghost" id="tokLater">बाद में</button></div>
+  <input id="tokIn" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="token यहाँ चिपकाएँ / लिखें">
+  <div class="btns"><button type="button" class="btn primary" id="tokOk">ठीक है</button></div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+  <div id="reqBox">
+    <p class="hint">Token नहीं है? Owner से माँगिए:</p>
+    <input id="reqName" type="text" autocomplete="off" placeholder="आपका नाम">
+    <input id="reqPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="आपका mobile number (WhatsApp वाला)">
+    <div class="hint" id="reqMsg" role="status"></div>
+    <div class="btns"><button type="button" class="btn ghost" id="reqCheck">स्थिति जाँचें</button><button type="button" class="btn" id="reqSend">📨 Request भेजें</button></div>
+  </div>
+  <div class="btns" style="margin-top:10px"><button type="button" class="btn ghost" id="tokLater">बाद में</button></div>
 </dialog>
 
 <div id="app" hidden>
@@ -195,6 +204,7 @@
         <div class="nativeOnly" hidden><button class="btn" id="nativePerm">🔔 फ़ोन अलार्म की अनुमति</button> <span class="hint" id="nativeInfo"></span></div>
         <div class="nativeOnly" hidden><button class="btn" id="bgBattery">🔋 बैटरी: बिना रोक-टोक चलने दें</button> <span class="hint" id="bgInfo"></span></div>
         <div class="nativeOnly" hidden><button class="btn danger" id="logoutBtn">🔒 Logout</button> <span class="hint">Logout तक Piyu पीछे (background) में चलती रहेगी</span></div>
+        <div id="adminRow" hidden><a class="btn primary" id="adminLink" target="_blank" rel="noopener">🛠 Admin panel — users और tokens</a></div>
         <div class="nativeOnly" hidden><button class="btn" id="updCheck">🔄 अपडेट जाँचें</button> <span class="hint" id="updInfo"></span></div>
         <button class="btn" id="syncBtn">🔄 अभी Sync करें</button>
         <button class="btn" id="expBtn">⬇ Backup लें</button>

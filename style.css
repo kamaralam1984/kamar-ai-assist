@@ -226,3 +226,6 @@ nav button.dot::after{content:'';position:absolute;top:4px;right:calc(50% - 22px
 .prow:last-child{border-bottom:0}.prow small{display:block;color:var(--mut);font-size:12px;margin-top:2px}.prow .btn{white-space:nowrap}
 #permDlg{border:1px solid var(--line);border-radius:18px;background:#16132e;color:var(--tx);padding:18px;width:min(92vw,400px)}
 #permDlg::backdrop{background:rgba(0,0,0,.6)}#permDlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+
+#tokDlg{max-height:92vh;overflow:auto}#tokDlg label{display:block}
+#adminRow{margin:8px 0}
