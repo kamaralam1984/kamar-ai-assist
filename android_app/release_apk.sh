@@ -7,6 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 export PIYU_VC=$(( $(date +%s) / 60 ))
+export PIYU_SERVER="${PIYU_SERVER:-https://ai.kvlbusinesssolutions.com}"     # address of your Piyu server, built into the app (no secrets here; the token is typed once at first login)
 bash build_apk.sh
 mkdir -p ../apk
 cp ../dist/piyu-debug.apk ../apk/piyu.apk

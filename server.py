@@ -7,7 +7,7 @@ Config (env or flags) — same file works on localhost and on a VPS:
   PIYU_DATA   default ./data      (piyu.sqlite3 lives here)
   PIYU_TOKEN  shared secret for /api (auto-generated into data/token.txt with --lan if not given)
 """
-import io, os, re, sys, wave, threading, hashlib, json, secrets, hmac, time, urllib.request, urllib.error, datetime
+import io, os, re, sys, wave, threading, hashlib, json, secrets, hmac, time, urllib.request, urllib.error, datetime, gzip, shutil, mimetypes
 from collections import OrderedDict
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -182,7 +182,7 @@ class H(SimpleHTTPRequestHandler):
         o = self.headers.get('Origin')
         if o and o in CORS_ORIGINS:
             self.send_header('Access-Control-Allow-Origin', o); self.send_header('Vary', 'Origin')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Piyu-Token'); self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Content-Encoding, X-Piyu-Token'); self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
 
     def end_headers(self):
         self.cors()
@@ -193,8 +193,13 @@ class H(SimpleHTTPRequestHandler):
 
     def send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+        gz = len(body) > 1200 and 'gzip' in self.headers.get('Accept-Encoding', '')
+        if gz:
+            body = gzip.compress(body, 5)
         self.send_response(code)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
+        if gz:
+            self.send_header('Content-Encoding', 'gzip'); self.send_header('Vary', 'Accept-Encoding')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
@@ -206,7 +211,16 @@ class H(SimpleHTTPRequestHandler):
 
     def read_body(self):
         n = int(self.headers.get('Content-Length', 0) or 0)
-        return None if n > MAX_BODY else self.rfile.read(n)
+        if n > MAX_BODY:
+            return None
+        raw = self.rfile.read(n)
+        if self.headers.get('Content-Encoding', '').lower() == 'gzip':        # the app compresses big state uploads
+            try:
+                d = __import__('zlib').decompressobj(16 + 15); out = d.decompress(raw, MAX_BODY + 1)   # size-capped: no zip bombs
+                return None if len(out) > MAX_BODY or d.unconsumed_tail else out
+            except Exception:
+                return b''
+        return raw
 
     def client_ip(self):
         return (self.headers.get('X-Forwarded-For', '').split(',')[0].strip() if os.environ.get('PIYU_BEHIND_PROXY') else '') or self.client_address[0]
@@ -223,7 +237,10 @@ class H(SimpleHTTPRequestHandler):
         try:
             if u.path == '/api/state':
                 if method == 'GET':
-                    return self.send_json(200, {'state': db.read_state(con), 'rev': db.get_rev(con)})
+                    rev = db.get_rev(con)
+                    if q.get('since', [''])[0] == str(rev):
+                        return self.send_json(200, {'same': True, 'rev': rev})     # nothing changed since the app's last sync: tiny reply
+                    return self.send_json(200, {'state': db.read_state(con), 'rev': rev})
                 if method == 'PUT':
                     body = self.read_body()
                     if body is None:
@@ -442,12 +459,59 @@ class H(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     # ---------- GET: api / tts / static ----------
+    ZIPPABLE = ('text/', 'application/javascript', 'application/json', 'application/manifest+json', 'image/svg+xml', 'application/xml')
+    GZ = {}
+    def static(self, path, head=False):
+        """serve a file with ETag (304 when unchanged), gzip for text-like files and a sensible cache policy. False = not a plain file."""
+        from urllib.parse import unquote
+        p = unquote(path)
+        if p.endswith('/'):
+            p += 'index.html'
+        root = os.path.realpath(ROOT); fs = os.path.realpath(os.path.join(root, p.lstrip('/')))
+        if not fs.startswith(root + os.sep) or not os.path.isfile(fs):
+            return False
+        st = os.stat(fs); etag = 'W/"%x-%x"' % (st.st_mtime_ns, st.st_size)
+        ctype = mimetypes.guess_type(fs)[0] or 'application/octet-stream'
+        if ctype in ('text/javascript', 'application/x-javascript'):
+            ctype = 'application/javascript'
+        if ctype.startswith('text/') or ctype in ('application/javascript', 'application/json'):
+            ctype += '; charset=utf-8'
+        heavy = p.startswith('/vendor/') or p.startswith('/voices/') or p.endswith('.traineddata')
+        cache = 'public, max-age=604800' if heavy else 'no-cache'          # app files: always re-check (cheap 304), big vendor files: a week
+        if self.headers.get('If-None-Match') == etag:
+            self.send_response(304); self.send_header('ETag', etag); self.send_header('Cache-Control', cache); self.end_headers(); return True
+        zip_ok = ctype.split(';')[0].startswith(self.ZIPPABLE) and st.st_size > 600 and 'gzip' in self.headers.get('Accept-Encoding', '')
+        self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('ETag', etag); self.send_header('Cache-Control', cache)
+        if zip_ok:
+            body = self.GZ.get((fs, etag))
+            if body is None:
+                with open(fs, 'rb') as f:
+                    body = gzip.compress(f.read(), 6)
+                if len(self.GZ) > 200: self.GZ.clear()
+                self.GZ[(fs, etag)] = body
+            self.send_header('Content-Encoding', 'gzip'); self.send_header('Vary', 'Accept-Encoding'); self.send_header('Content-Length', str(len(body))); self.end_headers()
+            if not head: self.wfile.write(body)
+        else:
+            self.send_header('Content-Length', str(st.st_size)); self.send_header('Last-Modified', self.date_time_string(st.st_mtime)); self.end_headers()
+            if not head:
+                with open(fs, 'rb') as f:
+                    shutil.copyfileobj(f, self.wfile, 256 * 1024)
+        return True
+
+    def do_HEAD(self):
+        u = urlparse(self.path)
+        if not u.path.startswith('/api/') and not HIDDEN.search(u.path) and self.static(u.path, head=True):
+            return
+        return super().do_HEAD()
+
     def do_GET(self):
         u = urlparse(self.path)
         if u.path.startswith('/api/'):
             return self.api('GET')
         if HIDDEN.search(u.path):
             return self.send_json(404, {'error': 'hidden'})
+        if u.path != '/tts' and self.static(u.path):
+            return
         if u.path == '/tts':
             if not self.authed():
                 return self.send_json(401, {'error': 'token'})
@@ -521,6 +585,12 @@ if __name__ == '__main__':
         for l in ('hi', 'en'):
             if l in DEFAULT_ID:
                 voice_obj(BY_ID[DEFAULT_ID[l]])
+    if PiperVoice:                       # first synthesis of a model is slow (graph build): do it now, so the first spoken sentence is not
+        def _warm():
+            for l, t in (('hi', 'ठीक है'), ('en', 'Okay')):
+                try: synth(l, t, 1.0, 0.6, 0.6, None, 0.0)
+                except Exception: pass
+        threading.Thread(target=_warm, daemon=True).start()
     print(f'Piyu chal rahi hai: http://localhost:{port}   (database: {DBPATH})')
     if public:
         print(f'Doosre device se: http://{lan_ip()}:{port}   |   Sync token: {token()}')

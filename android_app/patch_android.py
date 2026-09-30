@@ -2,10 +2,18 @@
 import os, re, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__)); RES = HERE + '/android/app/src/main/res'; MAN = HERE + '/android/app/src/main/AndroidManifest.xml'
 m = open(MAN, encoding='utf-8').read()
-perms = ['android.permission.USE_EXACT_ALARM', 'android.permission.VIBRATE', 'android.permission.POST_NOTIFICATIONS', 'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.USE_FULL_SCREEN_INTENT', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE', 'android.permission.RECEIVE_BOOT_COMPLETED', 'android.permission.WAKE_LOCK', 'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS']
+perms = ['android.permission.USE_EXACT_ALARM', 'android.permission.VIBRATE', 'android.permission.POST_NOTIFICATIONS', 'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.USE_FULL_SCREEN_INTENT', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE', 'android.permission.RECEIVE_BOOT_COMPLETED', 'android.permission.WAKE_LOCK', 'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', 'android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.CAMERA', 'android.permission.ACCESS_NETWORK_STATE']
 for p in perms:
     if p not in m:
         m = m.replace('</manifest>', '    <uses-permission android:name="%s" />\n</manifest>' % p)
+if 'android.speech.RecognitionService' not in m:
+    m = m.replace('</manifest>', '''    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
+</manifest>''', 1)
 if 'android:usesCleartextTraffic' not in m:
     m = m.replace('<application', '<application\n        android:usesCleartextTraffic="true"', 1)     # the Piyu server on your Wi-Fi is plain http
 if 'in.piyu.assistant.PiyuService' not in m and '.PiyuService' not in m:

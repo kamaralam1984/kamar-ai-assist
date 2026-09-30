@@ -22,6 +22,9 @@ Pehli baar: "Piyu ko jagayein" dabayein (browser ko awaaz chalane ke liye ek tap
 | **Data** | Python + SQLite backend, IndexedDB, device-se-device sync, backup/restore |
 | **Progress** | dashboard: roz kitne kaam hue, streak, samay par %, section-wise |
 
+## Live server
+https://ai.kvlbusinesssolutions.com (Sync token chahiye) · APK: https://ai.kvlbusinesssolutions.com/apk/piyu.apk · deploy ka tareeka: `deploy/DEPLOY.md`
+
 ## Bhashayein
 Hindi (Hinglish) · English · বাংলা · मराठी · اردو — Settings → भाषा. Poori UI, Piyu ki bolti awaaz (har bhasha ki apni neural awaaz), phone-alarm ka text aur photo se text (OCR) — sab chuni hui bhasha mein; Urdu right-to-left. Common commands (aaj/kal/abhi kya karna hai/niyam/ho gaya/focus/…) teeno nayi bhashaon mein samajhti hai. Translations machine-written hain — kisi native speaker se ek baar check karwa lein.
 

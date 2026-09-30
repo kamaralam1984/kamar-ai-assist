@@ -108,7 +108,7 @@
   }
   async function setLang(l) {
     if (!LANGS[l]) l = 'hi';
-    await loadPack(l); if (l !== 'en') await loadPack('en');
+    await loadPack(l); if (l !== 'en' && l !== 'hi') await loadPack('en');   // Hindi is the source language: no pack to download
     lang = l;
     if (typeof document !== 'undefined') {
       document.documentElement.lang = l; document.documentElement.dir = LANGS[l].dir;

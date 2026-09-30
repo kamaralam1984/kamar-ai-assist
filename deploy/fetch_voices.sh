@@ -7,6 +7,11 @@ get() { f="voices/$2.onnx"; [ -s "$f" ] && { echo "have $2"; return; }; curl -fL
 # minimum set: Hindi + English female. Add the rest only if the VPS has the RAM/disk (each ~60-75 MB on disk).
 get hi/hi_IN/priyamvada/medium hi_IN-priyamvada-medium
 get en/en_GB/jenny_dioco/medium en_GB-jenny_dioco-medium
+if [ "${EXTRA_LANGS:-0}" = "1" ] || [ "${ALL_VOICES:-0}" = "1" ]; then
+  get bn/bn_BD/google/medium bn_BD-google-medium
+  get mr/mr_IN/google/medium mr_IN-google-medium
+  get ur/ur_PK/aegis_female/medium ur_PK-aegis_female-medium
+fi
 if [ "${ALL_VOICES:-0}" = "1" ]; then
   get hi/hi_IN/pratham/medium hi_IN-pratham-medium
   get hi/hi_IN/rohan/medium hi_IN-rohan-medium

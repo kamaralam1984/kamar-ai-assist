@@ -54,10 +54,10 @@ function stamp() {
 /* Android app: is a newer APK published on my Piyu server?  (Android needs one tap to install — silent installs are not possible for sideloaded apps) */
 let updInfo = null;
 async function checkAppUpdate(manual) {
-  if (!(window.PiyuNative && PiyuNative.isNative) || !S.settings.serverUrl) return null;
+  if (!(window.PiyuNative && PiyuNative.isNative)) return null;
   try {
     const r = await fetchT('/apk/version.json', { cache: 'no-store' }, 8000); if (!r.ok) throw new Error('http ' + r.status);
-    const j = await r.json(), mine = window.PIYU_APP_VC || 0;
+    const j = await r.json(), mine = await PiyuNative.appVersion();
     updInfo = j.versionCode > mine ? j : null;
     const el = document.getElementById('updInfo');
     if (el) el.innerHTML = updInfo ? _t("🆕 नया Piyu (v{0}, {1} MB) — <button class=\"btn\" id=\"updBtn\">⬆ अपडेट करें</button>", [j.versionName, (Math.round(j.size / 1e5) / 10)]) : _t("✅ Piyu अप-टू-डेट है");
@@ -72,8 +72,9 @@ function nativeSoon() { if (!window.PiyuNative || !PiyuNative.available) return;
 async function nativeNow() {
   try { const r = await PiyuNative.sync(C.planAlarms(S.tasks, S.settings, Date.now())); if (r && r.error) console.warn('native', r.error); return r; } catch (e) { }
 }
-let saveErr = false;
+let saveErr = false, dirtySeq = 1, syncedSeq = 0, lastRev = 0;   // dirtySeq moves on every local change: an unchanged app + unchanged server = no data sent at all
 function save() {
+  dirtySeq++;
   stamp();
   nativeSoon();
   Store.save(S).then(ok => { if (!ok && !saveErr) { saveErr = true; toast('⚠ Data save nahi ho paaya — storage bhar gaya ho sakta hai'); } });
@@ -84,7 +85,8 @@ function save() {
 let syncT = null, syncing = false, syncInfo = { ok: null, at: 0, msg: 'अभी sync नहीं हुआ' };
 const hdrs = () => S.settings.token ? { 'X-Piyu-Token': S.settings.token } : {};
 /* the Android app is served from the phone itself, so it needs the address of the Piyu server (device setting, empty in a browser) */
-const U = p => (S.settings.serverUrl ? String(S.settings.serverUrl).replace(/\/+$/, '') : '') + p;
+const serverBase = () => String(S.settings.serverUrl || window.PIYU_DEFAULT_SERVER || '').replace(/\/+$/, '');   // APK: the address is built in (Settings can override it)
+const U = p => serverBase() + p;
 const fetchU = (p, o) => fetch(U(p), o);
 function scheduleSync() { clearTimeout(syncT); syncT = setTimeout(syncNow, 1500); }
 /* fetch with a timeout, so one hung request can never leave syncing=true forever */
@@ -92,23 +94,57 @@ async function fetchT(url, opts, ms) {
   const ac = new AbortController(), id = setTimeout(() => ac.abort(), ms || 20000);
   try { return await fetch(U(url), Object.assign({}, opts, { signal: ac.signal })); } finally { clearTimeout(id); }
 }
-let syncFails = 0;
+let syncFails = 0, tokenAsked = false;
+function askToken() {
+  const dlg = $('#tokDlg'); if (!dlg || dlg.open) return;
+  $('#tokIn').value = ''; $('#tokMsg').textContent = '';
+  try { dlg.showModal(); } catch (e) { const t = prompt(_t('इस server का Sync token डालें (जो सिर्फ़ आपको पता है)'), ''); if (t) applyToken(t); return; }
+  setTimeout(() => $('#tokIn').focus(), 200);
+}
+async function applyToken(t) {
+  t = String(t || '').trim(); if (!t) return false;
+  try {
+    const r = await fetchT('/api/state?since=-1', { headers: { 'X-Piyu-Token': t }, cache: 'no-store' }, 12000);
+    if (r.status === 401) { $('#tokMsg').textContent = _t('Token सही नहीं है'); return false; }
+  } catch (e) { $('#tokMsg').textContent = _t('server तक नहीं पहुँच पा रही — इंटरनेट जाँचें'); return false; }
+  S.settings.token = t; save(); const el = document.getElementById('setToken'); if (el) el.value = t;
+  if ($('#tokDlg').open) $('#tokDlg').close();
+  toast(_t('✅ Token सही है — अब आवाज़ और sync चलेंगे')); await syncNow(true); detectNeural(); refreshAI(); refreshWeb(); showSync();
+  return true;
+}
+$('#tokOk').onclick = () => applyToken($('#tokIn').value);
+$('#tokIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyToken($('#tokIn').value); } });
+$('#tokLater').onclick = () => $('#tokDlg').close();
+$('#tokBanner').onclick = askToken; $('#tokBanner').onkeydown = e => { if (e.key === 'Enter') askToken(); };
 async function syncNow(manual) {
   if (syncing) return; syncing = true;
   let done = false;
   try {
     for (let attempt = 0; attempt < 5 && !done; attempt++) {
-      const r = await fetchT('/api/state', { headers: hdrs(), cache: 'no-store' }, 20000);
-      if (r.status === 401) { syncInfo = { ok: false, at: Date.now(), msg: "Token चाहिए (Settings → Sync token)" }; done = true; break; }
+      const quick = lastRev && syncedSeq === dirtySeq;      // nothing changed here: just ask whether anything changed there (tiny reply)
+      const r = await fetchT('/api/state' + (quick ? '?since=' + lastRev : ''), { headers: hdrs(), cache: 'no-store' }, 20000);
+      if (r.status === 401) {
+        syncInfo = { ok: false, at: Date.now(), msg: "Token चाहिए (Settings → Sync token)" }; done = true;
+        if (!tokenAsked) { tokenAsked = true; setTimeout(askToken, 400); }      // a protected server without a token (browser or phone): ask for it — once per start, the red banner stays until it is set
+        break;
+      }
       if (!r.ok) throw new Error('http ' + r.status);
-      const { state: remote, rev } = await r.json();
+      const j = await r.json();
+      if (j.same) { syncInfo = { ok: true, at: Date.now(), msg: "Sync हो गया" }; syncFails = 0; done = true; break; }
+      const { state: remote, rev } = j;
       let changed = false;
       if (remote) changed = Store.mergeState(S, remote);
-      if (changed) { snapshot(); await Store.save(S); render(); }
+      if (changed) { dirtySeq++; snapshot(); await Store.save(S); render(); }
       stamp();
-      const p = await fetchT('/api/state', { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), body: JSON.stringify({ baseRev: rev, state: S }) }, 60000);
+      const mark = dirtySeq;
+      let body = JSON.stringify({ baseRev: rev, state: S }), hd = Object.assign({ 'Content-Type': 'application/json' }, hdrs());
+      if (body.length > 4000 && typeof CompressionStream !== 'undefined') {        // state uploads are text: ~5x smaller on the wire
+        try { body = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob(); hd['Content-Encoding'] = 'gzip'; } catch (e) { }
+      }
+      const p = await fetchT('/api/state', { method: 'PUT', headers: hd, body }, 60000);
       if (p.status === 409) { await sleep(150 + Math.random() * 300); continue; }   // someone else saved first: fetch, merge again
       if (!p.ok) throw new Error('put ' + p.status);
+      try { const pj = await p.json(); lastRev = pj.rev || 0; if (dirtySeq === mark) syncedSeq = mark; } catch (e) { }
       syncInfo = { ok: true, at: Date.now(), msg: "Sync हो गया" }; syncFails = 0; done = true;
       uploadBlobs().then(pullBlobs);
     }
@@ -122,6 +158,7 @@ async function syncNow(manual) {
   syncing = false; showSync();
 }
 function showSync() {
+  const b = $('#tokBanner'); if (b) b.hidden = !(syncInfo.ok === false && /Token/.test(syncInfo.msg));
   const el = $('#syncStatus'); if (!el) return;
   el.textContent = (syncInfo.ok ? '🟢 ' : syncInfo.ok === false ? '🟠 ' : '⚪ ') + _t(syncInfo.msg) + (syncInfo.at ? ' · ' + hm(syncInfo.at) : '');
 }
@@ -245,7 +282,7 @@ async function detectNeural() {
   try {
     const st = await (await fetchU('/tts-status')).json();
     neural = !!(st.piper && st.hi && st.en);
-    if (neural && st.auth) { const r = await fetchU('/tts?lang=en&text=ok', { headers: hdrs() }); neural = r.ok; if (!r.ok) toast(_t("Piyu की आवाज़ के लिए Settings में Sync token डालें")); }
+    if (neural && st.auth) { const r = await fetchU('/tts?lang=en&text=ok', { headers: hdrs() }); neural = r.ok; if (!r.ok) setTimeout(() => { const b = $('#voiceDiag'); if (b) b.textContent = '🔇 ' + _t('आवाज़ बंद: Sync token चाहिए'); }, 500); if (!r.ok) toast(_t("Piyu की आवाज़ के लिए Settings में Sync token डालें")); }
   } catch (e) { neural = false; }
   fillVoiceSelects();
 }
@@ -276,7 +313,11 @@ async function sayNeural(text, interrupt, mood) {
   if (a.state !== 'running') { try { await a.resume(); } catch (e) { } }
   const lang = speechLang();
   const parts = [];
-  segments(cleanForSpeech(forSpeech(text)), lang).forEach(seg => chunk(seg.t, 220).forEach(c => parts.push({ lang: seg.lang, t: c })));
+  segments(cleanForSpeech(forSpeech(text)), lang).forEach(seg => {
+    const chs = chunk(seg.t, 220);
+    if (!parts.length && chs[0] && chs[0].length > 90) chs.splice(0, 1, ...chunk(chs[0], 90));      // a short first piece: sound starts sooner, the rest is fetched while it plays
+    chs.forEach(c => parts.push({ lang: seg.lang, t: c }));
+  });
   if (!parts.length) return true;
   const vp = vparams(mood);
   const jobs = [];
@@ -353,6 +394,30 @@ function audio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
   if (actx && actx.state === 'suspended') actx.resume();
   return actx;
+}
+/* Android WebView / Chrome keep audio "suspended" until the page is touched once: wake it on the very first touch, whatever the user taps */
+['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => { try { if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { } }, { passive: true, capture: true }));
+
+/* "🔊 आवाज़ की जाँच": tells the exact reason when Piyu is silent (server, token, audio, volume) and plays a sample */
+async function voiceDiag() {
+  const box = $('#voiceDiag'); const say_ = m => { box.textContent = m; };
+  say_('⏳ ' + _t('जाँच रही हूँ…'));
+  const base = serverBase() || _t('इसी device का server');
+  let st;
+  try { st = await (await fetchT('/tts-status', { cache: 'no-store' }, 8000)).json(); }
+  catch (e) { return say_('❌ ' + _t('Piyu server तक नहीं पहुँच पा रही ({0}) — इंटरनेट / server का पता जाँचें', [base])); }
+  if (!st.piper) return say_('❌ ' + _t('इस server पर Piyu की आवाज़ चालू नहीं है'));
+  let r;
+  try { r = await fetchT('/tts?lang=' + (S.settings.lang === 'en' ? 'en' : 'hi') + '&text=' + encodeURIComponent(_t('जाँच')) + '&nocache=' + Date.now(), { headers: hdrs(), cache: 'no-store' }, 15000); }
+  catch (e) { return say_('❌ ' + _t('आवाज़ का जवाब नहीं आया — इंटरनेट धीमा या बंद है')); }
+  if (r.status === 401) return say_('🔑 ' + _t('Sync token खाली या ग़लत है — Settings → Sync token में सही token डालें'));
+  if (!r.ok) return say_('❌ ' + _t('server ने आवाज़ नहीं दी (कोड {0})', [r.status]));
+  const a = audio(); if (!a) return say_('❌ ' + _t('इस phone का audio चालू नहीं हो पा रहा'));
+  try { await a.resume(); } catch (e) { }
+  if (a.state !== 'running') return say_('👆 ' + _t('Audio सोया हुआ है — स्क्रीन को एक बार छूकर "आवाज़ की जाँच" फिर दबाएँ'));
+  neural = true;
+  say_('✅ ' + _t('आवाज़ ठीक है — अभी बोल रही हूँ। सुनाई न दे तो phone का media volume बढ़ाएँ और silent / Do-not-disturb बंद करें।'));
+  say(_t2('नमस्ते {0}, अब मेरी आवाज़ आ रही है।', [CALL()], 'Hello {0}, my voice is working now.', [CALL()]), { interrupt: true });
 }
 function bellNote(freq, t0, dur, vol) {
   const a = audio(); if (!a) return;
@@ -651,7 +716,7 @@ function render() {
 
 /* ================= how-to dialog ================= */
 /* ---- links & attachments ---- */
-const MAX_ATT = 25 * 1024 * 1024;
+const MAX_ATT = 25 * 1024 * 1024, MAX_ATT_IN = 80 * 1024 * 1024;   // 25 MB is kept after compression; a big photo/scan may come in up to 80 MB
 const SAFE_OPEN = /^(image\/(png|jpe?g|gif|webp|bmp)|application\/pdf|text\/plain|audio\/|video\/)/;   // never open html/svg (they would run inside the app origin)
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 function linkify(text) {   // returns safe HTML
@@ -671,6 +736,12 @@ try { upSet = new Set(JSON.parse(localStorage.getItem('piyu.up') || '[]')); } ca
 const markUp = id => { upSet.add(id); try { localStorage.setItem('piyu.up', JSON.stringify([...upSet])); } catch (e) { } };
 const attId = () => 'att_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 async function addAttachment(t, file) {
+  if (file.size > MAX_ATT_IN) { toast(_t("{0} बहुत बड़ी है (अधिकतम 25 MB)", [file.name])); return false; }
+  if (S.settings.compress !== false && file.size > 150 * 1024) {      // make photos / scanned PDFs small first: faster upload, sync and storage, still readable
+    if (file.size > 1024 * 1024) toast(_t("⏳ {0} छोटी कर रही हूँ…", [file.name]));
+    const r = await PiyuMedia.optimize(file, { onProgress: (i, n) => { if (n > 1) $('#toast').textContent = _t("⏳ {0} छोटी कर रही हूँ… {1}/{2}", [file.name, i, n]); } });
+    if (r.changed) { toast(_t("📉 {0}: {1} → {2} (छोटा किया, साफ़ पढ़ने लायक)", [file.name, PiyuMedia.fmt(r.from), PiyuMedia.fmt(r.to)])); file = r.blob; }
+  }
   if (file.size > MAX_ATT) { toast(_t("{0} बहुत बड़ी है (अधिकतम 25 MB)", [file.name])); return false; }
   const id = attId();
   await Store.putBlob(id, file);
@@ -1377,8 +1448,22 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 /* language the microphone listens in: the Settings choice, else the app language */
 const micLang = () => S.settings.micLang || (PiyuI18n.LANGS[S.settings.lang] || PiyuI18n.LANGS.hi).sr;
+let nativeListening = false;
+async function listenNative(cb) {          // the phone's own recognizer: Android WebView has no browser speech API
+  if (nativeListening) { PiyuNative.stopListening(); return; }
+  if (!(await ensurePerm('mic'))) { toast(_t('बोलने के लिए Microphone की अनुमति चाहिए (Settings → अनुमतियाँ)')); return; }
+  stopSpeaking(); wakePause(); nativeListening = true;
+  $('#micBtn').classList.add('rec'); if (cb) $('#gMic').classList.add('rec'); $('#status').textContent = _t("सुन रही हूँ…");
+  const end = () => { nativeListening = false; $('#micBtn').classList.remove('rec'); $('#gMic').classList.remove('rec'); $('#status').textContent = _t("तैयार"); wakeResume(); };
+  await PiyuNative.listen(micLang(), {
+    partial: t => { if (!cb) $('#q').value = t; },
+    done: m => { end(); const t = (m[0] || '').trim(); if (!t) return toast(_t('सुन नहीं पाई — फिर से बोलिए')); if (cb) cb(t, m.slice(1)); else { $('#q').value = ''; ask(t); } },
+    error: () => { end(); toast(_t('सुन नहीं पाई — फिर से बोलिए')); }
+  });
+}
 function listen(cb) {
   if (typeof cb !== 'function') cb = null;
+  if (isNativeApp()) { if (PiyuNative.speechAvail) return listenNative(cb); toast(_t('इस phone में speech service नहीं मिली — Google app अपडेट करें')); return; }
   if (!SR) { toast(_t("इस browser में voice input नहीं है — Chrome/Edge इस्तेमाल करें")); return; }
   if (rec) { rec.stop(); return; }
   stopSpeaking(); wakePause();
@@ -1715,6 +1800,7 @@ function bindVoiceLib() {
   $('#setPitchSt').oninput = e => { s.pitchSt = +e.target.value; $('#oPitchSt').textContent = (s.pitchSt > 0 ? '+' : '') + s.pitchSt; };
   $('#setPitchSt').onchange = () => { save(); say(_t(SAMPLE.hi)); };
   $('#setHinglish').onchange = e => { s.hinglish = e.target.checked; save(); };
+  $('#voiceCheck').onclick = voiceDiag;
   $('#tryHi').onclick = () => say(_t(SAMPLE.hi)); $('#tryHg').onclick = () => say(SAMPLE.hg); $('#tryEn').onclick = () => say(SAMPLE.en);
 }
 const SAMPLE = { hi: 'नमस्ते, मैं पीयू हूँ। मैं आपको हर काम याद दिलाऊँगी। आज आपके तीन काम हैं।', hg: 'abhi kya karna hai? Razorpay webhook add karo aur payment test karo, phir mujhe batana.', en: 'Hello, I am Piyu. You have three tasks today, and I will remind you before each one.' };
@@ -1724,6 +1810,7 @@ function bindSettings() {
   $('#setLang').value = s.lang; $('#setRate').value = s.rate; $('#setPitch').value = s.pitch; $('#setVol').value = s.vol; $('#setPre').value = s.preMin; $('#setCall').value = s.call; $('#setWake').checked = s.wake;
   const out = () => { $('#oRate').textContent = (+s.rate).toFixed(2); $('#oPitch').textContent = (+s.pitch).toFixed(2); $('#oVol').textContent = Math.round(s.vol * 100) + '%'; };
   out();
+  $('#setCompress').checked = s.compress !== false; $('#setCompress').onchange = e => { s.compress = e.target.checked; save(); };
   $('#setMic').value = s.micLang || ''; $('#setMic').onchange = e => { s.micLang = e.target.value; save(); };
   $('#setLang').onchange = async e => {
     s.lang = e.target.value;
@@ -1775,11 +1862,11 @@ function bindSettings() {
   /* Android app only: server address + real phone-alarm permission */
   if (window.PiyuNative && PiyuNative.isNative) {
     document.querySelectorAll('.nativeOnly').forEach(x => x.hidden = false);
-    $('#setServer').value = s.serverUrl || '';
+    $('#setServer').value = s.serverUrl || window.PIYU_DEFAULT_SERVER || '';
     $('#setServer').onchange = e => { s.serverUrl = e.target.value.trim(); save(); syncNow(true); detectNeural(); refreshAI(); refreshWeb(); };
     permInfo = async () => { const p = await PiyuNative.permission(); $('#nativeInfo').textContent = p === 'granted' ? _t("✅ फ़ोन अलार्म चालू — app बंद होने पर भी बजेंगे") : _t("⚠ अनुमति नहीं है — अलार्म बंद app में नहीं बजेंगे"); };
     $('#nativePerm').onclick = async () => { await PiyuNative.requestPermissions(); await permInfo(); nativeNow(); };
-    permInfo();
+    permInfo(); $('#permCard').hidden = false; renderPerms();
     const bgInfo = async () => { const st = await PiyuNative.bgStatus(); $('#bgInfo').textContent = !st ? '' : (st.wanted ? '✅ ' + _t('background में चालू') : '⚠ ' + _t('background बंद')) + ' · ' + (st.batteryExempt ? '🔋 ' + _t('बैटरी: बिना रोक') : '⚠ ' + _t('बैटरी: सीमित (alarm देर से बज सकते हैं)')); };
     $('#bgBattery').onclick = async () => { await PiyuNative.requestBattery(); setTimeout(bgInfo, 1500); };
     $('#logoutBtn').onclick = async () => {
@@ -1837,6 +1924,50 @@ renderChips();
 $('#chips').onclick = e => { if (e.target.tagName === 'BUTTON') ask(e.target.dataset.q || e.target.textContent); };
 
 /* ================= boot ================= */
+/* ---------- permissions (Android app): mic, speaker/volume, notifications, exact alarms, battery, camera ---------- */
+let permCache = {};
+const PERM_ROWS = [
+  { k: 'mic', icon: '🎤', name: 'Microphone', why: 'बोलकर Piyu से बात करने के लिए', ok: p => p.mic === 'granted', need: true },
+  { k: 'volume', icon: '🔊', name: 'Speaker / आवाज़', why: 'Piyu की आवाज़ सुनने के लिए (phone का media volume चालू होना चाहिए)', ok: p => !(p.volume === 0), btn: 'आवाज़ बढ़ाएँ', note: p => p.volumeMax ? ' · volume ' + p.volume + '/' + p.volumeMax : '' },
+  { k: 'notif', icon: '🔔', name: 'Notifications', why: 'alarm और याद दिलाने के लिए', ok: p => p.notif === undefined || p.notif === 'granted', need: true },
+  { k: 'exact', icon: '⏰', name: 'सटीक Alarm', why: 'ठीक समय पर alarm बजाने के लिए', ok: p => p.exact === undefined || p.exact === 'granted', need: true },
+  { k: 'battery', icon: '🔋', name: 'Battery: बिना रोक', why: 'phone सोने पर भी Piyu चलती रहे', ok: p => p.batteryExempt === undefined || !!p.batteryExempt, need: true },
+  { k: 'camera', icon: '📷', name: 'Camera', why: 'photo खींचकर काम से जोड़ने के लिए', ok: p => p.camera === 'granted' }
+];
+async function refreshPerms() { try { permCache = await PiyuNative.perms(); } catch (e) { } return permCache; }
+async function askPerm(k) {
+  const before = permCache; const p = await PiyuNative.ask(k); permCache = p;
+  const row = PERM_ROWS.find(r => r.k === k);
+  if (row && !row.ok(p) && (k === 'mic' || k === 'camera') && before && before[k] === 'denied') { toast(_t('अनुमति बंद है — phone की Settings खुल रही है, वहाँ Permissions में चालू कीजिए')); PiyuNative.openSettings(); }
+  return p;
+}
+async function ensurePerm(k) {            // used by features: asks only if it is missing
+  const p = await refreshPerms(); const row = PERM_ROWS.find(r => r.k === k);
+  if (!row || row.ok(p)) return true;
+  await askPerm(k); return row.ok(permCache);
+}
+async function renderPerms() {
+  const box = $('#permList'); if (!box) return;
+  const p = await refreshPerms();
+  box.innerHTML = PERM_ROWS.map(r => { const ok = r.ok(p); return `<div class="prow"><span>${r.icon} <b>${esc(_t(r.name))}</b><small>${esc(_t(r.why))}${r.note ? esc(r.note(p)) : ''}</small></span><span>${ok ? '✅' : `<button class="btn sm" data-perm="${r.k}">${esc(_t(r.btn || 'अनुमति दें'))}</button>`}</span></div>`; }).join('');
+  box.querySelectorAll('[data-perm]').forEach(b => b.onclick = async () => { await askPerm(b.dataset.perm); renderPerms(); });
+}
+async function askAllPerms() { for (const k of ['mic', 'notif', 'exact', 'battery', 'camera']) { const row = PERM_ROWS.find(r => r.k === k); if (!row.ok(await refreshPerms())) { await askPerm(k); await sleep(400); } } if ((await refreshPerms()).volume === 0) await PiyuNative.ask('volume'); renderPerms(); nativeNow(); }
+async function permsOnboard() {           // right after sign-in / start: one clear explanation, then the system asks one by one
+  if (!isNativeApp() || !PiyuNative.bgAvailable) return;
+  const p = await refreshPerms(); const miss = PERM_ROWS.filter(r => r.need && !r.ok(p));
+  let last = 0; try { last = +localStorage.getItem('piyu.permAsk') || 0; } catch (e) { }
+  if (!miss.length || Date.now() - last < 12 * 3600e3) return;
+  $('#permDlgList').innerHTML = miss.map(r => `<div class="prow"><span>${r.icon} <b>${esc(_t(r.name))}</b><small>${esc(_t(r.why))}</small></span></div>`).join('');
+  try { $('#permDlg').showModal(); } catch (e) { }
+}
+$('#permAll').onclick = askAllPerms;
+$('#permDlgOk').onclick = async () => { $('#permDlg').close(); try { localStorage.setItem('piyu.permAsk', String(Date.now())); } catch (e) { } await askAllPerms(); };
+$('#permDlgLater').onclick = () => { $('#permDlg').close(); try { localStorage.setItem('piyu.permAsk', String(Date.now())); } catch (e) { } };
+document.addEventListener('visibilitychange', () => { if (!document.hidden && isNativeApp() && $('#permList') && $('#permList').offsetParent) renderPerms(); });
+/* the camera button: ask first (the phone's file-chooser cannot ask by itself once it was refused) */
+document.addEventListener('click', e => { const t = e.target; if (t && t.id === 'attCam' && isNativeApp() && permCache.camera && permCache.camera !== 'granted') { e.preventDefault(); askPerm('camera').then(p => toast(p.camera === 'granted' ? _t('📷 अनुमति मिल गई — अब कैमरे का बटन फिर दबाइए') : _t('Camera की अनुमति नहीं मिली'))); } }, true);
+
 /* Android app: sign-in on this phone. While signed in, Piyu keeps running in the background (foreground service, restarts after reboot) until Logout. */
 const isNativeApp = () => !!(window.PiyuNative && PiyuNative.isNative);
 const sha = async t => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('piyu:' + t)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1844,26 +1975,42 @@ function loginUI() {
   if (!isNativeApp()) return;
   const s = S.settings, need = !s.loggedIn || s.pinHash;
   if (!need) { $('#startBtn').click(); return; }      // already signed in, no PIN: open straight away
-  $('#loginBox').hidden = false;
+  $('#loginBox').hidden = false; $('#pinForgot').hidden = !(s.loggedIn && s.pinHash);
   $('#startBtn').textContent = s.loggedIn ? _t('अनलॉक') : _t('Login');
   $('#loginPin').placeholder = s.loggedIn ? _t('अपना PIN डालें') : _t('PIN बनाएँ (वैकल्पिक)');
+  $('#loginToken').hidden = !!(s.token || s.loggedIn);      // first sign-in on a phone: the server token, typed once
 }
+/* forgot the PIN: the server's Sync token (which only the owner has) removes it — a wrong token removes nothing */
+$('#pinForgot').onclick = async () => {
+  const tk = $('#loginToken'), msg = $('#loginMsg');
+  if (tk.hidden) { tk.hidden = false; tk.placeholder = _t('Sync token डालकर PIN हटाएँ'); tk.focus(); msg.textContent = _t('Sync token डालें, फिर यही बटन दोबारा दबाएँ'); return; }
+  const t = tk.value.trim(); if (!t) return;
+  try {
+    const r = await fetchT('/api/state?since=-1', { headers: { 'X-Piyu-Token': t }, cache: 'no-store' }, 10000);
+    if (r.ok) { S.settings.token = t; S.settings.pinHash = ''; S.settings.loggedIn = false; save(); tk.value = ''; tk.hidden = true; loginUI(); msg.textContent = _t('PIN हटा दिया — नया PIN बनाइए (या खाली छोड़कर Login दबाइए)'); return; }
+  } catch (e) { }
+  msg.textContent = _t('Token सही नहीं है');
+};
 async function nativeLogin() {       // true = may open the app
   if (!isNativeApp()) return true;
   const s = S.settings, pin = $('#loginPin').value.trim();
   if (s.loggedIn && !s.pinHash) return true;
-  if (s.loggedIn) { if ((await sha(pin)) === s.pinHash) return true; $('#loginMsg').textContent = _t('PIN ग़लत है'); return false; }
+  if (s.loggedIn) { if ((await sha(pin)) === s.pinHash) return true; $('#loginMsg').textContent = _t('PIN ग़लत है'); $('#loginPin').value = ''; $('#loginPin').focus(); return false; }
   if (pin && !/^\d{4,6}$/.test(pin)) { $('#loginMsg').textContent = _t('PIN 4 से 6 अंकों का होना चाहिए'); return false; }
+  const tk = ($('#loginToken').value || '').trim(); if (tk) s.token = tk;
   s.loggedIn = true; s.pinHash = pin ? await sha(pin) : ''; save(); return true;
 }
 async function bgOn() {
   if (!isNativeApp() || !PiyuNative.bgAvailable || !S.settings.loggedIn) return;
   await PiyuNative.bgStart({ title: 'Piyu', text: _t('Piyu चालू है — आपके alarm सुरक्षित हैं') });
 }
+/* keyboard "Go/Enter" submits, tapping a field brings it into view above the keyboard, and a wrong PIN is shown clearly */
+['loginPin', 'loginToken'].forEach(id => { const el = document.getElementById(id); if (!el) return; el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#startBtn').click(); } }); el.addEventListener('focus', () => setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)); el.addEventListener('input', () => { $('#loginMsg').textContent = ''; }); });
+$('#loginPin').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 6); });
 $('#startBtn').onclick = async () => {
   await storeReady;
   if (!(await nativeLogin())) return;
-  bgOn();
+  bgOn(); permsOnboard(); refreshPerms();
   await detectNeural();
   $('#splash').hidden = true; $('#app').hidden = false;
   audio(); keepAwake();
@@ -1878,7 +2025,7 @@ $('#startBtn').onclick = async () => {
       const t = S.tasks.find(x => x.id === id); if (!t) return;
       if (act === 'done') markDone(t); else if (act === 'snooze') snooze(t, 5);
     };
-    PiyuNative.init().then(async () => { if (await PiyuNative.permission() !== 'granted') await PiyuNative.requestPermissions(); permInfo(); nativeNow(); });
+    PiyuNative.init().then(() => { permInfo(); nativeNow(); });      // permissions are asked by the one clear dialog (permsOnboard) and by Settings → 🔐 अनुमतियाँ
     setInterval(nativeNow, 300000);
     setTimeout(checkAppUpdate, 6000); setInterval(checkAppUpdate, 6 * 3600e3);
   }
@@ -1888,4 +2035,4 @@ $('#startBtn').onclick = async () => {
   say(_t2("नमस्ते {0}, मैं पीयू हूँ, आपकी असिस्टेंट। आप मेरे बॉस {1} हैं।", [CALL(), OWNER()], "Hello {0}, I am Piyu. You are my boss, {1}.", [callEn(), S.settings.ownerEn]) + (n ? _t2(" आपका अगला काम {0} है: {1}", [full(n.alarmAt), n.title], " Your next task is at {0}: {1}", [full(n.alarmAt), n.title]) : _t2(" आप कोई document upload कर सकते हैं।", [], " You can upload a document.", [])));
 };
 
-if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !(window.PiyuNative && PiyuNative.isNative)) navigator.serviceWorker.register('sw.js').catch(() => { });
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });

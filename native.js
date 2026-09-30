@@ -68,6 +68,44 @@
   N.bgStatus = async () => { if (!BG) return null; try { return await BG.status(); } catch (e) { return null; } };
   N.requestBattery = async () => { if (!BG) return null; try { return await BG.requestBatteryExemption(); } catch (e) { return null; } };
   N.cancelAll = async () => { if (!LN) return; try { const p = (await LN.getPending()).notifications || []; if (p.length) await LN.cancel({ notifications: p.map(x => ({ id: x.id })) }); } catch (e) { } };
+  N.appVersion = async () => { if (BG) { try { const i = await BG.appInfo(); if (i && i.versionCode) return +i.versionCode; } catch (e) { } } return root.PIYU_APP_VC || 0; };
+
+  /* ---- permissions (mic, camera, notifications, exact alarms, battery, volume) ---- */
+  N.perms = async () => {
+    const o = { native: true };
+    if (BG && BG.permStatus) { try { Object.assign(o, await BG.permStatus()); } catch (e) { } }
+    if (LN) {
+      try { o.notif = (await LN.checkPermissions()).display; } catch (e) { }
+      try { const x = await LN.checkExactNotificationSetting(); o.exact = x && x.exact_alarm; } catch (e) { }
+    }
+    return o;
+  };
+  /* name: mic | camera | notif | exact | battery | volume  -> the system asks the user; returns the new status */
+  N.ask = async name => {
+    try {
+      if (name === 'mic' || name === 'camera') await BG.permRequest({ name });
+      else if (name === 'notif') await LN.requestPermissions();
+      else if (name === 'exact') { if (LN.changeExactNotificationSetting) await LN.changeExactNotificationSetting(); }
+      else if (name === 'battery') await BG.requestBatteryExemption();
+      else if (name === 'volume') await BG.volumeUp();
+    } catch (e) { N.lastError = String(e && e.message || e); }
+    return N.perms();
+  };
+  N.openSettings = async () => { if (BG) { try { await BG.openAppSettings(); } catch (e) { } } };
+
+  /* ---- the phone's own speech recognition (no browser speech API exists inside an Android WebView) ---- */
+  N.speechAvail = false;
+  try { if (BG && BG.speechAvailable) BG.speechAvailable().then(r => { N.speechAvail = !!(r && r.available); }).catch(() => { }); } catch (e) { }
+  let speechHandles = [];
+  N.listen = async (lang, h) => {      // h = { partial(text), done(matches[]), error(code) }
+    const off = () => { speechHandles.forEach(x => { try { x.remove(); } catch (e) { } }); speechHandles = []; };
+    off();
+    speechHandles.push(await BG.addListener('speechPartial', e => h.partial && h.partial((e.matches || [])[0] || '')));
+    speechHandles.push(await BG.addListener('speechFinal', e => { off(); h.done && h.done(e.matches || []); }));
+    speechHandles.push(await BG.addListener('speechError', e => { off(); h.error && h.error(e.code); }));
+    try { await BG.speechStart({ lang }); } catch (e) { off(); h.error && h.error(String(e && e.message || e)); }
+  };
+  N.stopListening = async () => { if (BG) { try { await BG.speechStop(); } catch (e) { } } };
   N.openUrl = openUrl;
   N.init = init; N.requestPermissions = requestPermissions; N.permission = permission; N.sync = sync;
   root.PiyuNative = N;

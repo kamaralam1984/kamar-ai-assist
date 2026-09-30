@@ -16,10 +16,30 @@
   <div class="orb big"><i></i><i></i><i></i></div>
   <h1>Piyu</h1>
   <p>आपकी पर्सनल असिस्टेंट</p>
+  <div id="loginBox" hidden>
+    <input id="loginToken" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Sync token (server से मिला)" hidden>
+    <input id="loginPin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+    <div class="hint" id="loginMsg" role="status"></div>
+    <button type="button" class="btn ghost sm" id="pinForgot" hidden>PIN भूल गए?</button>
+  </div>
   <button id="startBtn" class="btn primary xl">Piyu को जगाएँ</button>
-  <div id="loginBox" hidden><input id="loginPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off"><div class="hint" id="loginMsg"></div></div>
   <small>एक बार टैप करने से आवाज़ और alarm चालू हो जाएँगे</small>
 </div>
+
+<dialog id="permDlg">
+  <h3>🔐 Piyu को कुछ अनुमतियाँ चाहिए</h3>
+  <p class="hint">ताकि आवाज़, बोलकर बात और alarm सही चलें। हर बार phone आपसे पूछेगा — आप चाहें तो मना भी कर सकते हैं।</p>
+  <div id="permDlgList"></div>
+  <div class="btns"><button type="button" class="btn primary" id="permDlgOk">अनुमति दें</button><button type="button" class="btn ghost" id="permDlgLater">बाद में</button></div>
+</dialog>
+<div id="tokBanner" hidden role="button" tabindex="0">🔑 Sync token डालें — इसके बिना आवाज़ और sync नहीं चलेंगे (यहाँ दबाइए)</div>
+<dialog id="tokDlg">
+  <h3>🔑 Sync token</h3>
+  <p class="hint">यह आपके Piyu server का token है (जो सिर्फ़ आपको पता है)। इसके बिना Piyu की आवाज़ और sync नहीं चलेंगे।</p>
+  <input id="tokIn" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="token यहाँ चिपकाएँ / लिखें">
+  <div class="hint" id="tokMsg" role="status"></div>
+  <div class="btns"><button type="button" class="btn primary" id="tokOk">ठीक है</button><button type="button" class="btn ghost" id="tokLater">बाद में</button></div>
+</dialog>
 
 <div id="app" hidden>
   <header>
@@ -115,7 +135,7 @@
         <label>अंदाज़ <select id="setStyle"></select></label>
         <label>आवाज़ की ऊँचाई <input type="range" id="setPitchSt" min="-4" max="4" step="0.5"><output id="oPitchSt"></output></label>
         <label class="chk"><input type="checkbox" id="setHinglish"> Roman में लिखी हिन्दी (Hinglish) को हिन्दी आवाज़ में पढ़ें</label>
-        <button class="btn" id="tryHi">🔊 हिन्दी सुनें</button><button class="btn" id="tryHg">🔊 Hinglish सुनें</button><button class="btn" id="tryEn">🔊 English सुनें</button>
+        <button class="btn primary" id="voiceCheck">🔊 आवाज़ की जाँच</button> <span class="hint" id="voiceDiag"></span><br><button class="btn" id="tryHi">🔊 हिन्दी सुनें</button><button class="btn" id="tryHg">🔊 Hinglish सुनें</button><button class="btn" id="tryEn">🔊 English सुनें</button>
         <p class="hint" id="voiceLibHint"></p>
       </div>
       <div class="card">
@@ -123,6 +143,7 @@
         <label>भाषा
           <select id="setLang" data-i18n-skip><option value="hi">हिन्दी (Hinglish)</option><option value="en">English</option><option value="bn">বাংলা</option><option value="mr">मराठी</option><option value="ur">اردو</option></select>
         </label>
+        <label class="chk"><input type="checkbox" id="setCompress"> Upload की फ़ोटो / scanned PDF अपने आप छोटी करें (साफ़ पढ़ने लायक रहती है)</label>
         <label>माइक किस भाषा में सुने <select id="setMic"><option value="">Auto (ऐप की भाषा)</option><option value="hi-IN">हिन्दी / Hinglish</option><option value="en-IN">English (India)</option><option value="bn-BD" data-i18n-skip>বাংলা</option><option value="mr-IN" data-i18n-skip>मराठी</option><option value="ur-PK" data-i18n-skip>اردو</option></select></label>
         <label>हिन्दी आवाज़ <select id="setVoiceHi"></select></label>
         <label>English आवाज़ <select id="setVoiceEn"></select></label>
@@ -159,6 +180,12 @@
         <button class="btn" id="notifBtn">🔔 Notification चालू करें</button>
         <button class="btn ghost" id="testAlarm">⏰ Alarm test करें</button>
         <p class="hint">Alarm तब बजता है जब Piyu का tab/app खुला हो। फ़ोन बंद होने पर भी बजाने के लिए 📅 Calendar बटन से alarm phone के calendar में डालें।</p>
+      </div>
+      <div class="card nativeOnly" hidden id="permCard">
+        <h3>🔐 अनुमतियाँ (Permissions)</h3>
+        <p class="hint">Piyu ठीक से चलने के लिए जो-जो चाहिए, सब यहाँ है। जो बंद है, उसके आगे बटन दबाइए — phone खुद पूछेगा।</p>
+        <div id="permList"></div>
+        <button class="btn primary" id="permAll">✅ ज़रूरी सब अनुमतियाँ एक साथ माँगें</button>
       </div>
       <div class="card">
         <h3>Data, Backup और Sync</h3>
@@ -274,6 +301,7 @@
 <script src="voicekit.js"></script>
 <script src="mind.js"></script>
 <script src="ocr.js"></script>
+<script src="media.js"></script>
 <script src="native.js"></script>
 <script src="app.js"></script>
 </body>

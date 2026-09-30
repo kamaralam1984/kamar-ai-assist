@@ -203,3 +203,26 @@ nav button.dot::after{content:'';position:absolute;top:4px;right:calc(50% - 22px
 :root[lang="bn"] body{font-family:"Noto Sans Bengali","Hind Siliguri",system-ui,sans-serif}
 :root[lang="mr"] body{font-family:"Noto Sans Devanagari","Noto Sans Bengali","Noto Naskh Arabic",system-ui,sans-serif}
 :root[dir="rtl"] .clock b,:root[dir="rtl"] .clock span,:root[dir="rtl"] .tm,:root[dir="rtl"] #cd,:root[dir="rtl"] .vbig{direction:ltr;unicode-bidi:isolate}
+
+/* sign-in on the phone: big, easy-to-tap fields; the PIN is masked with dots but the phone shows the number keypad */
+#loginBox{display:flex;flex-direction:column;gap:10px;width:100%;max-width:300px;margin:6px auto 14px}
+#loginBox[hidden]{display:none}
+#loginBox input{width:100%;box-sizing:border-box;height:54px;padding:0 14px;font-size:20px;text-align:center;color:var(--tx);background:rgba(255,255,255,.08);border:1.5px solid var(--line);border-radius:14px;outline:none}
+#loginBox input:focus{border-color:var(--p1);background:rgba(255,255,255,.12)}
+#loginBox input[hidden]{display:none}
+#loginPin{-webkit-text-security:disc;text-security:disc;letter-spacing:.5em;font-size:24px}
+#loginPin::placeholder,#loginToken::placeholder{letter-spacing:0;font-size:14px;color:var(--mut)}
+#loginMsg{min-height:20px;text-align:center;color:#ff9bb0;font-size:14px}
+
+#tokBanner{position:fixed;top:0;left:0;right:0;z-index:80;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));background:#7a1633;color:#fff;font-size:14px;text-align:center;cursor:pointer}
+#tokBanner[hidden]{display:none}
+#tokDlg{border:1px solid var(--line);border-radius:18px;background:#16132e;color:var(--tx);padding:18px;width:min(92vw,380px)}
+#tokDlg::backdrop{background:rgba(0,0,0,.6)}
+#tokDlg input{width:100%;box-sizing:border-box;height:50px;padding:0 12px;margin:8px 0;font-size:16px;color:var(--tx);background:rgba(255,255,255,.08);border:1.5px solid var(--line);border-radius:12px}
+#tokDlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+#tokMsg{min-height:18px;color:#ff9bb0}
+
+.prow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.prow:last-child{border-bottom:0}.prow small{display:block;color:var(--mut);font-size:12px;margin-top:2px}.prow .btn{white-space:nowrap}
+#permDlg{border:1px solid var(--line);border-radius:18px;background:#16132e;color:var(--tx);padding:18px;width:min(92vw,400px)}
+#permDlg::backdrop{background:rgba(0,0,0,.6)}#permDlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}

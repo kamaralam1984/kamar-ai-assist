@@ -2,9 +2,21 @@
   "appId": "in.piyu.assistant",
   "appName": "Piyu",
   "webDir": "www",
-  "server": { "androidScheme": "http", "cleartext": true },
-  "android": { "allowMixedContent": true },
+  "server": {
+    "url": "https://ai.kvlbusinesssolutions.com",
+    "androidScheme": "https",
+    "cleartext": false,
+    "allowNavigation": [
+      "ai.kvlbusinesssolutions.com"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false
+  },
   "plugins": {
-    "LocalNotifications": { "smallIcon": "ic_stat_piyu", "iconColor": "#8B5CFF" }
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_piyu",
+      "iconColor": "#8B5CFF"
+    }
   }
 }
