@@ -106,7 +106,7 @@ function showAnnouncement(t) {
 function applyFeatures() {
   const f = ME.features || {};
   document.body.classList.toggle('nodocs', f.docs === false);
-  document.querySelectorAll('#modeBox [data-mode],#setModeCard [data-mode]').forEach(b => { b.hidden = f[b.dataset.mode] === false; });
+  document.querySelectorAll('#modeBox [data-mode],#setModeCard [data-mode],#pModeCard [data-mode]').forEach(b => { b.hidden = f[b.dataset.mode] === false; });
   const fam = document.getElementById('famRow'); if (fam) fam.hidden = f.kids === false;
   if (window.PiyuStudent) {
     if (f.kids === false && S.settings.mode === 'kids') { S.settings.mode = f.business !== false ? 'business' : 'student'; save(); PiyuStudent.applyMode(); }
@@ -141,7 +141,7 @@ function accessProblem(code) {
 }
 function askToken(code) {
   const dlg = $('#tokDlg'); if (!dlg || dlg.open) return;
-  if (document.querySelector('.k-wiz') || document.getElementById('jcIn')) { setTimeout(() => askToken(code), 1000); return; }     // never trap a child mid sign-up (or mid "parent's code") under this adult dialog
+  if (document.querySelector('.k-wiz') || document.getElementById('jcIn') || window.__ovTab === 'kjoingate' || window.__kidsJoining) { setTimeout(() => askToken(code), 1000); return; }     // never trap a child mid sign-up (or mid "parent's code") under this adult dialog -- includes the brief spinner while openSignup() is still probing /api/me (before #jcIn/.k-wiz exist), and the gap after the wizard closes but before the no-token join call finishes (__kidsJoining)
   if (S.settings.token) { tokenAsked = false; return; }           // got a working token meanwhile (e.g. a child just self-joined): this ask is stale
   $('#tokIn').value = ''; $('#tokMsg').textContent = (typeof code === 'string' && code !== 'token' && ACCESS_MSG[code]) ? '⚠ ' + _t(ACCESS_MSG[code]) : '';
   try { $('#reqName').value = localStorage.getItem('piyu.reqName') || ''; $('#reqPhone').value = localStorage.getItem('piyu.reqPhone') || ''; } catch (e) { }

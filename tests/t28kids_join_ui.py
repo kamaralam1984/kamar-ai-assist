@@ -58,6 +58,14 @@ try:
         kp.click('#modeBox [data-mode=kids]'); kp.click('#startBtn'); kp.wait_for_timeout(2200)
         chk('fresh device is asked for a parent code, NOT a server token', kp.locator('#jcIn').count() == 1 and not kp.evaluate("document.getElementById('tokDlg') && document.getElementById('tokDlg').open"))
 
+        # a background sync failure (401, no token yet) must not pop the adult token dialog even during the brief probe spinner
+        # BEFORE #jcIn/.k-wiz exist (openSignup() marks this window with window.__ovTab === 'kjoingate' throughout)
+        kp.evaluate("PiyuKids.ov('<div class=\"k-center\"><div class=\"k-spin\"></div></div>', 'kjoingate', 'k-ov-solid'); askToken('token');")
+        kp.wait_for_timeout(500)
+        chk('token dialog stays closed during the join-gate probe window (no #jcIn/.k-wiz yet)', not kp.evaluate("document.getElementById('tokDlg').open"))
+        kp.evaluate("PiyuKids.openSignup(false)"); kp.wait_for_timeout(800)
+        chk('join gate is back after the probe window', kp.locator('#jcIn').count() == 1)
+
         kp.fill('#jcIn', '000000'); kp.click('[data-kact=jcnext]'); kp.wait_for_timeout(1200)
         chk('wrong code rejected, still on the gate', kp.locator('#jcIn').count() == 1 and kp.locator('#jcMsg').inner_text().strip() != '')
         kp.fill('#jcIn', code); kp.click('[data-kact=jcnext]'); kp.wait_for_timeout(800)
@@ -68,7 +76,7 @@ try:
         kp.fill('#wzPin', '1234'); kp.fill('#wzPin2', '1234'); kp.click('[data-kw=next]')
         kp.click('[data-kw=locoff]'); kp.click('[data-kw=next]'); kp.click('[data-kw=next]'); kp.wait_for_timeout(2200)
         chk('child signed up and is ready', kp.evaluate('PiyuKids.K().ready === true'))
-        kp.wait_for_timeout(1200)                                        # let any stale, already-queued askToken() resolve (and now no-op, since a token exists)
+        kp.wait_for_timeout(2000)                                        # let any stale, already-queued askToken() resolve (and now no-op, since a token exists)
         chk('a real server token was issued and stored silently (no dialog ever shown)', kp.evaluate("!!S.settings.token") and kp.evaluate("document.getElementById('tokDlg') && document.getElementById('tokDlg').open") in (False, None))
 
         # the profile really exists server-side under that fresh token, and the parent is ALREADY linked -- no separate link step (query through

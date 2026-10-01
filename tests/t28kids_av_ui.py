@@ -93,11 +93,11 @@ try:
         chk('cam listen button absent (cam still off)', mp.locator('[data-kp=avopen][data-kind=cam]').count() == 0)
 
         mp.click('[data-kp=avopen][data-kind=mic]'); mp.wait_for_timeout(500)
-        chk('live view opened', 'लाइव' in mp.locator('.k-ovin').inner_text())
+        chk('live view opened', mp.locator('[data-kp=avclose]').count() == 1)
 
         kp.wait_for_timeout(2600)                                        # let the child push at least one real chunk and the parent poll for it
         mp.wait_for_timeout(2600)
-        chk('child now shows the red "someone is watching" banner', kp.locator('#kAvBanner:visible').count() == 1 and 'रोको' in kp.locator('#kAvBanner').inner_text())
+        chk('child now shows the red "someone is watching" banner', kp.locator('#kAvBanner:visible').count() == 1 and kp.locator('#kAvBanner [data-kact=avstopall]').count() == 1)
         chk('parent is actually receiving live audio (not stale)', mp.locator('#avStale:visible').count() == 0)
         s, r = call(kid, 'GET', '/api/kids/av'); chk('server agrees it is live', s == 200 and r['mic']['live'])
 

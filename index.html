@@ -29,9 +29,10 @@
   <div id="modeBox" class="modeBox">
     <p class="modeQ">आप कौन हैं?</p>
     <div class="modeCards">
-      <button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b><small>पढ़ाई, Quiz, Flashcards, Teacher</small></button>
       <button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b><small>काम, alarm, documents, assistant</small></button>
-      <button type="button" class="modeCard kid" data-mode="kids"><span class="mi">👶</span><b>Kids</b><small>बच्चों के लिए: रूटीन, सीखना, खेल, कहानी, सुरक्षा</small></button>
+      <button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b><small>पढ़ाई, Quiz, Flashcards, Teacher</small></button>
+      <button type="button" class="modeCard parent" data-mode="parent"><span class="mi">👪</span><b>Parent</b><small>बच्चे पर नज़र: लोकेशन, रिपोर्ट, अलर्ट, SOS</small></button>
+      <button type="button" class="modeCard kid" data-mode="kids"><span class="mi">🧒</span><b>Child</b><small>बच्चों के लिए: रूटीन, सीखना, खेल, कहानी, सुरक्षा</small></button>
     </div>
   </div>
   <div id="kParentSwitch" class="kps" hidden><span class="kps-name"></span><button type="button" class="btn ghost sm">🔒 खाता बदलें (पैरेंट)</button></div>
@@ -112,6 +113,9 @@
     <section id="tab-kplay" class="tab"><div id="kPlay"></div></section>
     <section id="tab-kstory" class="tab"><div id="kStory"></div></section>
     <section id="tab-kstars" class="tab"><div id="kStars"></div></section>
+    <section id="tab-phome" class="tab"><div id="pHome"></div></section>
+    <section id="tab-palerts" class="tab"><div id="pAlerts"></div></section>
+    <section id="tab-pset" class="tab"><div id="pSet"></div></section>
 
     <!-- ALL TASKS -->
     <section id="tab-tasks" class="tab">
@@ -162,7 +166,7 @@
       </div>
       <div class="card" id="setModeCard">
         <h3>👤 खाते का प्रकार</h3>
-        <div class="modeCards sm"><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button><button type="button" class="modeCard kid" data-mode="kids"><span class="mi">👶</span><b>Kids</b></button></div>
+        <div class="modeCards sm"><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard parent" data-mode="parent"><span class="mi">👪</span><b>Parent</b></button><button type="button" class="modeCard kid" data-mode="kids"><span class="mi">🧒</span><b>Child</b></button></div>
         <label>नाम <input id="setSName" type="text" autocomplete="off" placeholder="आपका नाम"></label>
         <button class="btn" type="button" id="setSProfile">🎓 Student की पूरी जानकारी बदलें</button>
         <p class="hint">Student में पढ़ाई के features दिखते हैं (courses, quiz, flashcards, plan); Business में काम और documents वाले। कभी भी बदल सकते हैं।</p>

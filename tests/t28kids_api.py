@@ -86,6 +86,10 @@ try:
     s, r = call(mom3, 'POST', '/api/family/link', {'code': code3}); chk('av: mom3 links', s == 200)
     s, r = call(kid3, 'GET', '/api/kids/av'); chk('av: feature off by default -> 403', s == 403 and r['error'] == 'feature')
     s, r = owner_call('POST', '/api/admin/users/%d/features' % kid3['id'], {'features': {'kids_av': True}}); chk('av: admin cannot enable without agreement', s == 400 and r['error'] == 'av_agree')
+    n_before = owner_call('GET', '/api/admin/users')[1]['users']
+    s, r = owner_call('POST', '/api/admin/users', {'name': 'SneakyKid', 'features': {'kids_av': True}})
+    chk('av: creating a brand-new user with kids_av already on is refused', s == 400 and r['error'] == 'av_agree')
+    chk('av: the refused create-with-kids_av made no user at all', len(owner_call('GET', '/api/admin/users')[1]['users']) == len(n_before))
     s, r = call(kid3, 'POST', '/api/kids/av/agree', {}); chk('av: kid3 agrees', s == 200)
     s, r = call(mom3, 'POST', '/api/kids/av/agree', {}); chk('av: mom3 agrees', s == 200)
     s, r = owner_call('POST', '/api/admin/users/%d/features' % kid3['id'], {'features': {'kids_av': True}}); chk('av: admin enables for kid3 after agreement', s == 200 and r['features']['kids_av'])
@@ -100,7 +104,8 @@ try:
     import base64 as _b64
     chunk3 = _b64.b64encode(b'a-short-audio-chunk').decode()
     s, r = call(kid3, 'POST', '/api/kids/av/push', {'kind': 'mic', 'data': chunk3, 'mime': 'audio/webm'}); chk('av: child pushes a chunk', s == 200 and r['ok'])
-    s, r = call(mom3, 'GET', '/api/family/child/%d/av/pull?kind=mic' % cid3); chk('av: parent pulls the live chunk', s == 200 and r.get('live') and r.get('chunk') == chunk3)
+    s, r = call(kid3, 'POST', '/api/kids/av/push', {'kind': 'mic', 'data': 'z' * 450000, 'mime': 'audio/webm'}); chk('av: oversized push body rejected (413) before parsing', s == 413)
+    s, r = call(mom3, 'GET', '/api/family/child/%d/av/pull?kind=mic' % cid3); chk('av: parent pulls the live chunk (oversized push did not overwrite it)', s == 200 and r.get('live') and r.get('chunk') == chunk3)
     s, r = call(stranger, 'GET', '/api/family/child/%d/av/pull?kind=mic' % cid3); chk('av: a non-parent cannot pull', s == 403)
     s, r = call(mom3, 'POST', '/api/family/child/%d/av/close' % cid3, {'kind': 'mic'}); chk('av: parent closes', s == 200 and r['ok'])
     s, r = call(kid3, 'GET', '/api/kids/av'); chk('av: child sees live go false again', s == 200 and not r['mic']['live'])
@@ -122,6 +127,9 @@ try:
     s, r = raw('wrong-device-token-not-real', 'some-other-device-id-16ch', 'GET', '/api/kids/me'); chk('a stranger cannot use a fake token', s == 401)
     s, r = raw(None, None, 'POST', '/api/kids/join', {'code': pcode, 'device': 'short', 'name': 'Xx', 'newPin': '1234'}); chk('join: bad device id refused', s == 400 and r['error'] == 'device')
     s, r = raw(None, None, 'POST', '/api/kids/join', {'code': pcode, 'device': DEV4 + 'b', 'name': '', 'newPin': '1234'}); chk('join: bad name refused, no half-made account', s == 400 and r['error'] == 'name')
+    n_users_before = len(owner_call('GET', '/api/admin/users')[1]['users'])
+    s, r = raw(None, None, 'POST', '/api/kids/join', {'code': pcode, 'device': DEV4 + 'c', 'name': 'x' * 100000, 'newPin': '1234'})
+    chk('join: oversized no-auth body rejected (413) before parsing, no account made', s == 413 and len(owner_call('GET', '/api/admin/users')[1]['users']) == n_users_before)
 finally:
     srv.terminate()
     try: srv.wait(5)

@@ -39,6 +39,9 @@ VOICES = {l: True for l in DEFAULT_ID}          # languages that have at least o
 CORS_ORIGINS = {o.strip() for o in os.environ.get('PIYU_CORS', 'http://localhost,https://localhost,capacitor://localhost').split(',') if o.strip()}
 MAX_LOADED = int(os.environ.get('PIYU_MAX_VOICES', '3'))   # RAM guard: each loaded voice is ~150-300 MB
 MAX_BODY = 200 * 1024 * 1024
+KIDS_JOIN_MAX_BODY = 8 * 1024            # the no-token join body is a few short fields; never needs to be big (DoS guard, checked before reading it)
+KIDS_AV_PUSH_MAX_BODY = 400 * 1024       # one base64 chunk (kids.AV_MAX_CHUNK * 1.4) plus a little JSON overhead
+KIDS_API_MAX_BODY = 160 * 1024           # every other Kids/family POST body (profile, config, events, ...): generous but far below MAX_BODY
 BLOB_ID = re.compile(r'^[A-Za-z0-9_-]{1,80}$')
 HIDDEN = re.compile(r'^/(data|\.venv|voices|deploy|__pycache__)(/|$)|^/(server|db)\.py$|\.sqlite3|\.md$|\.sh$|\.py$|^/(run|README)', re.I)
 
@@ -389,6 +392,9 @@ class H(SimpleHTTPRequestHandler):
             return self.send_json(429, {'error': 'slow down'})
         req = {}
         if method == 'POST':
+            cap = KIDS_AV_PUSH_MAX_BODY if path == '/api/kids/av/push' else KIDS_API_MAX_BODY
+            if int(self.headers.get('Content-Length', 0) or 0) > cap:         # reject an oversized body before reading/parsing it (DoS guard)
+                return self.send_json(413, {'error': 'too big'})
             try:
                 req = json.loads(self.read_body() or b'{}')
                 assert isinstance(req, dict)
@@ -715,6 +721,8 @@ class H(SimpleHTTPRequestHandler):
         ip = self.client_ip()
         if not rate_ok(ip + ':kjoin', 20, 300) or not rate_ok('kjoin-all', 300, 600):
             return self.send_json(429, {'error': 'slow down'})
+        if int(self.headers.get('Content-Length', 0) or 0) > KIDS_JOIN_MAX_BODY:    # unauthenticated: reject an oversized body before reading it (DoS guard)
+            return self.send_json(413, {'error': 'too big'})
         try:
             req = json.loads(self.read_body() or b'{}')
             assert isinstance(req, dict)
@@ -817,7 +825,10 @@ class H(SimpleHTTPRequestHandler):
             r = body()
             if r is None:
                 return self.send_json(400, {'error': 'json'})
-            u, err = ACC.create(r.get('name'), r.get('phone'), r.get('password') or None, owner_tok, r.get('features'))
+            feats = r.get('features')
+            if isinstance(feats, dict) and feats.get('kids_av'):          # a brand-new account cannot have agreed yet (see the same gate on .../features below)
+                return self.send_json(400, {'error': 'av_agree'})
+            u, err = ACC.create(r.get('name'), r.get('phone'), r.get('password') or None, owner_tok, feats)
             if err:
                 return self.send_json(400, {'error': err})
             ACC.audit('owner', 'create-user', u['name'], 'password set' if r.get('password') else 'token generated')

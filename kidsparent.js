@@ -202,7 +202,7 @@
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-kp]'); if (!b || !PN) return; const a = b.dataset.kp, i = +b.dataset.i; const c = PN.cfg;
     switch (a) {
-      case 'close': destroyMap(); PN = null; P.closeOv(); P.renderAll(); break;
+      case 'close': destroyMap(); PN = null; P.closeOv(); P.renderAll(); if (S.settings.mode === 'parent') renderPHome(); break;
       case 'tab': readSafetyForm(); readRoutineForm(); PN.tab = b.dataset.t; draw(); break;
       case 'reload': reload(); break;
       case 'consent': { const on = b.dataset.on === '1'; if (on && !confirm(_t('लोकेशन शेयरिंग चालू करें? बच्चे की स्क्रीन पर "📍 लोकेशन चालू" दिखेगा और सिर्फ़ आप देख सकेंगे।'))) break; const r = await PN.src.consent(on); if (r && r.ok === false) { toast(r.why === 'perm' ? _t('फ़ोन में लोकेशन की अनुमति नहीं मिली') : _t('अभी नहीं हो पाया')); } else toast(on ? _t('लोकेशन शेयरिंग चालू') : _t('लोकेशन शेयरिंग बंद')); await reload(); break; }
@@ -226,7 +226,7 @@
       case 'code': { const pin = P.pinFresh(); const r = await api('/api/kids/code', { pin }); const box = el('kCode'); if (box) box.innerHTML = r.ok ? `<b>${e2(r.j.code)}</b><small>${e2(_t('15 मिनट के लिए'))}</small>` : e2(_t('कोड नहीं बन पाया')); break; }
       case 'clang': K().clang = b.dataset.l; save(); draw(); break;
       case 'tostudent': case 'tobiz': { if (!confirm(_t('खाता बदलें? बच्चे का रूटीन अलार्म हट जाएगा।'))) break; const m = a === 'tostudent' ? 'student' : 'business'; destroyMap(); PN = null; P.closeOv(); S.settings.mode = m; save(); PiyuStudent.applyMode(); if (m === 'student') PiyuStudent.onboard(); break; }
-      case 'unlink': if (confirm(_t('इस बच्चे को अपनी सूची से हटाएँ?'))) { await api('/api/family/child/' + PN.src.cid + '/unlink', {}); PN = null; P.closeOv(); family(); } break;
+      case 'unlink': if (confirm(_t('इस बच्चे को अपनी सूची से हटाएँ?'))) { const r = await api('/api/family/child/' + PN.src.cid + '/unlink', {}); PN = null; P.closeOv(); if (!r.ok) { toast(_t('हटाया नहीं जा सका — इंटरनेट देखिए')); } if (S.settings.mode === 'parent') renderPHome(); else family(); } break;
       case 'avopen': openAvLive(b.dataset.kind); break;
       case 'avclose': closeAvLive(); break;
       case 'export': { const r = await api('/api/kids/export', { pin: P.pinFresh() }); if (r.ok) { const blob = new Blob([JSON.stringify(r.j, null, 1)], { type: 'application/json' }), a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = 'piyu-kids-data.json'; a2.click(); setTimeout(() => URL.revokeObjectURL(a2.href), 4000); } else toast(_t('डाउनलोड नहीं हुआ')); break; }
@@ -293,6 +293,55 @@
   }
   function sosScreen(a) { P.ov(`<div class="k-center k-sosbox"><div class="k-burst red">🆘</div><h2>${e2(a.title)}</h2><p class="k-sub">${e2(a.body || '')}</p><button class="k-btn red" data-kf="open" data-id="${a.child_uid}">📍 ${e2(_t('लोकेशन देखें'))}</button><button class="k-btn ghost" data-kf="close">${e2(_t('बंद करें'))}</button></div>`, 'ksosalert', 'k-ov-solid red'); }
 
-  window.PiyuKidsParent = { redraw() { if (PN && PN.d && !PN.pick) draw(); }, open, openPanel, family, boot, pollAlerts, srcFamily, srcLocal };
+  /* =================== Parent mode: its own home screen (dashboard of all children), alerts tab, settings tab — not a popup ===================
+     The per-child deep-dive (report / safety+map / routine / messages / settings) stays exactly the openPanel()/draw() overlay above; only
+     reached now from a child's card here instead of from the old family() popup list. */
+  function addChildCardsHtml(sfx) {
+    sfx = sfx || '';         // pHome and pSet can both mount this at once (e.g. 0 children + Settings tab visited) -- give the 2nd copy distinct ids so getElementById can't grab the wrong one
+    return `<div class="k-card"><b>👶 ${e2(_t('नए बच्चे को जोड़ें'))}</b><p class="k-sub small">${e2(_t('बच्चे के नए फ़ोन में कोई token नहीं चाहिए। कोड बनाइए, बच्चे को बताइए — बच्चा Piyu खोलकर "Child" चुने और वही कोड डाल दे। बस, जुड़ भी जाएगा और account भी अपने-आप बन जाएगा।'))}</p><button class="k-btn" data-pd="pcode">🔑 ${e2(_t('कोड बनाएँ'))}</button><div id="pdPCode${sfx}" class="k-code"></div></div>
+      <div class="k-card"><b>➕ ${e2(_t('पहले से बने बच्चे को जोड़ें'))}</b><p class="k-sub small">${e2(_t('अगर बच्चे का Piyu account पहले से है: बच्चे के फ़ोन में Piyu Child → पैरेंट → सेटिंग → "जोड़ने का कोड बनाएँ" से 6 अंकों का कोड लीजिए।'))}</p><div class="k-linkrow"><input id="pdCode${sfx}" inputmode="numeric" maxlength="6" placeholder="••••••"><button class="k-btn" data-pd="link">🔗 ${e2(_t('जोड़ें'))}</button></div><div class="k-msg" id="pdMsg${sfx}"></div></div>`;
+  }
+  async function renderPHome() {
+    const root = el('pHome'); if (!root) return;
+    root.innerHTML = '<div class="k-center"><div class="k-spin">⏳</div></div>';
+    const r = await api('/api/family/children'); const kids = r.ok ? r.j.children : [];
+    if (!kids.length) { root.innerHTML = `<div class="p-wrap"><div class="k-empty big">👪<br>${e2(_t('अभी कोई बच्चा नहीं जुड़ा — नीचे से जोड़िए।'))}</div>${addChildCardsHtml()}</div>`; return; }
+    const cards = kids.map(c => {
+      const loc = c.consent && c.last ? '📍 ' + e2(ago(c.last.at)) + (c.inside && c.inside.length ? ' · ✅ ' + e2(c.inside.join(', ')) : '') : e2(c.consent ? _t('लोकेशन का इंतज़ार') : _t('लोकेशन बंद'));
+      return `<button class="p-card" data-pd="open" data-id="${c.id}"><span class="p-av">${e2(c.avatar)}</span>
+        <div class="p-info"><b>${e2(c.name)}</b><small>${loc}</small><div class="p-stats"><span>🔥${c.streak || 0}</span><span>⭐${c.starsToday || 0}</span><span>⏱️${Math.round(c.minutesToday || 0)}${c.limit ? '/' + c.limit : ''}</span>${c.today ? `<span>✅${c.today.done}/${c.today.scheduled}</span>` : ''}</div></div>
+        <span class="p-arrow">›</span></button>`;
+    }).join('');
+    root.innerHTML = `<div class="p-wrap"><div class="k-sec"><h3>${e2(_t('मेरे बच्चे'))}</h3><button class="k-chipbtn" data-pd="addch">➕ ${e2(_t('और जोड़ें'))}</button></div><div class="p-cards">${cards}</div></div>`;
+  }
+  async function renderPAlerts() {
+    const root = el('pAlerts'); if (!root) return;
+    root.innerHTML = '<div class="k-center"><div class="k-spin">⏳</div></div>';
+    const r = await api('/api/family/alerts'); const alerts = r.ok ? r.j.alerts : [];
+    root.innerHTML = `<div class="p-wrap"><div class="k-sec"><h3>${e2(_t('सारी सूचनाएँ'))}</h3></div><div class="k-alerts">${alerts.length ? alerts.map(a => `<div class="k-alert ${a.kind}"><div><b>${e2(a.title)}</b><small>${e2(a.body || '')}</small></div><span>${e2(ago(a.at))}</span></div>`).join('') : `<p class="k-sub small">${e2(_t('अभी कोई सूचना नहीं'))}</p>`}</div></div>`;
+    if (alerts.length) api('/api/family/alerts/seen', { upto: Math.max(...alerts.map(a => a.id)) });
+  }
+  function renderPSet() {
+    const root = el('pSet'); if (!root) return;
+    root.innerHTML = `<div class="p-wrap"><div class="k-sec"><h3>${e2(_t('बच्चे जोड़ें / हटाएँ'))}</h3></div>${addChildCardsHtml('Set')}
+      <div class="k-sec"><h3>${e2(_t('खाता बदलें'))}</h3></div><div class="modeCards sm" id="pModeCard"><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard parent" data-mode="parent"><span class="mi">👪</span><b>Parent</b></button><button type="button" class="modeCard kid" data-mode="kids"><span class="mi">🧒</span><b>Child</b></button></div>`;
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-pd]'); if (!b) return; const a = b.dataset.pd, card = b.closest('.k-card');
+    if (a === 'open') openPanel(srcFamily(+b.dataset.id));
+    else if (a === 'addch') { const r2 = el('pHome'); if (r2 && !r2.querySelector('[data-pd=pcode]')) r2.insertAdjacentHTML('beforeend', addChildCardsHtml()); }
+    else if (a === 'pcode') { const r = await api('/api/family/code', {}); const box = card && card.querySelector('.k-code'); if (box) box.innerHTML = r.ok ? `<b>${e2(r.j.code)}</b><small>${e2(_t('30 मिनट के लिए'))}</small>` : e2(_t('कोड नहीं बन पाया')); }
+    else if (a === 'link') {
+      const inp = card && card.querySelector('input'), msg = card && card.querySelector('.k-msg'); const code = ((inp && inp.value) || '').trim();
+      if (!/^\d{6}$/.test(code)) { if (msg) msg.textContent = _t('6 अंकों का कोड डालिए'); return; }
+      const r = await api('/api/family/link', { code }); if (!r.ok) { if (msg) msg.textContent = r.j.error === 'self' ? _t('यह आपका अपना फ़ोन है') : _t('कोड ग़लत है या पुराना हो गया'); return; }
+      P.sfx('win'); toast(_t('बच्चा जुड़ गया ✅')); renderPHome();
+    }
+  });
+  async function enter() { await boot(); renderPHome(); }
+  function leave() { /* alert polling is deliberately mode-agnostic (keeps running for Business/Student too); nothing to tear down */ }
+  function onTab(n) { if (n === 'phome') renderPHome(); else if (n === 'palerts') renderPAlerts(); else if (n === 'pset') renderPSet(); }
+
+  window.PiyuKidsParent = { redraw() { if (PN && PN.d && !PN.pick) draw(); }, open, openPanel, family, boot, pollAlerts, srcFamily, srcLocal, enter, leave, onTab, renderPHome, renderPAlerts, renderPSet };
   document.addEventListener('click', e => { if (e.target.closest('#famBtn')) family(); });
 })();

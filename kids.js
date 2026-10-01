@@ -614,7 +614,8 @@
     k.ready = true; S.settings.mode = 'kids'; S.settings.sname = ''; k.routineEdited = true; if (!k.created) k.created = Date.now(); save();
     closeOv(); if (!wasKid || !w.edit) { if (window.PiyuStudent) PiyuStudent.applyMode(); } else renderAll();
     FX().confetti(160); sfx('win'); renderAll(); syncTasks();
-    (w.joinCode ? joinWithCode(w) : pushProfile().then(() => true)).then(async ok => { if (ok && w.loc) { const r = await setConsent(true, w.pin || pinFresh()); if (!r.ok) toast(r.why === 'perm' ? _t('लोकेशन की अनुमति नहीं मिली — पैरेंट पैनल से फिर कोशिश करें') : _t('अभी लोकेशन चालू नहीं हो पाई')); } if (ok && k.routineEdited) pushConfig(); });
+    if (w.joinCode && !S.settings.token) window.__kidsJoining = true;   // closeOv() already lifted the ".k-wiz" guard, but a brand-new device has no token yet until the join call below resolves -- keep the adult token dialog out of that gap too
+    (w.joinCode ? joinWithCode(w) : pushProfile().then(() => true)).then(async ok => { if (ok && w.loc) { const r = await setConsent(true, w.pin || pinFresh()); if (!r.ok) toast(r.why === 'perm' ? _t('लोकेशन की अनुमति नहीं मिली — पैरेंट पैनल से फिर कोशिश करें') : _t('अभी लोकेशन चालू नहीं हो पाई')); } if (ok && k.routineEdited) pushConfig(); }).finally(() => { window.__kidsJoining = false; });
     kSay(_t2('नमस्ते {0}! मैं पियू हूँ। मैं रोज़ आपको काम याद दिलाऊँगी, सिखाऊँगी और कहानी सुनाऊँगी। चलो शुरू करें!', [k.name], 'Hello {0}! I am Piyu. I will remind you of your tasks, teach you and tell you stories. Let us begin!', [k.name]), 'cheerful');
     goTab('khome');
   }

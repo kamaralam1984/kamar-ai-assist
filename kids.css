@@ -16,7 +16,33 @@ body[data-mode=kids] .btn.primary{background:linear-gradient(135deg,#8b5cf6,#ff7
 body[data-mode=kids] dialog{background:#3b1c7a;border-color:rgba(255,255,255,.3)}
 body[data-mode=kids] #splash h1{background:linear-gradient(90deg,#ff7ab6,#ffd166,#38bdf8);-webkit-background-clip:text;background-clip:text}
 body[data-mode=kids] .orb i{background:conic-gradient(from 0deg,#ff7ab6,#ffd166,#38bdf8,#8b5cf6,#ff7ab6)}
-.modeCard.kid{grid-column:1/-1;background:linear-gradient(160deg,rgba(255,122,182,.3),rgba(255,209,102,.18),rgba(56,189,248,.2))}
+.modeCard.kid{background:linear-gradient(160deg,rgba(255,122,182,.3),rgba(255,209,102,.18),rgba(56,189,248,.2))}
+.modeCard.parent{background:linear-gradient(160deg,rgba(56,189,248,.28),rgba(52,211,153,.18))}
+
+/* =====================================================================
+   PARENT MODE — a calm guardian theme, its own home/alerts/settings tabs
+   (the per-child deep-dive panel reuses the same overlay look as before)
+   ===================================================================== */
+body[data-mode=parent]{--bg:#0a3344;--bg2:#0f4559;--card:rgba(255,255,255,.08);--line:rgba(255,255,255,.18);--tx:#fff;--mut:#bfe3ee;--p1:#38bdf8;--p2:#34d399;
+  background:radial-gradient(800px 520px at 85% -8%,rgba(56,189,248,.35),transparent 60%),radial-gradient(760px 560px at -10% 20%,rgba(52,211,153,.3),transparent 60%),linear-gradient(160deg,#0f4559,#0a3344);
+  background-attachment:fixed}
+body[data-mode=parent] header{background:rgba(10,51,68,.75)}
+body[data-mode=parent] nav{background:linear-gradient(180deg,rgba(15,69,89,.95),rgba(10,51,68,.97));border-color:rgba(255,255,255,.22)}
+body[data-mode=parent] nav button.on{color:#7fe3c9}
+body[data-mode=parent] .btn.primary{background:linear-gradient(135deg,#38bdf8,#34d399)}
+body[data-mode=parent] dialog{background:#0f4559;border-color:rgba(255,255,255,.22)}
+.p-wrap{max-width:720px;margin:0 auto;padding:4px 2px 24px}
+.p-cards{display:flex;flex-direction:column;gap:10px}
+.p-card{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:var(--tx);cursor:pointer;transition:transform .2s,border-color .2s}
+.p-card:active{transform:scale(.98)}
+.p-card:hover{border-color:var(--p1)}
+.p-av{font-size:34px;line-height:1;flex-shrink:0}
+.p-info{flex:1;min-width:0}
+.p-info b{display:block;font-size:16px}
+.p-info small{color:var(--mut);display:block;margin:2px 0 6px}
+.p-stats{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;font-weight:700}
+.p-arrow{font-size:22px;color:var(--mut);flex-shrink:0}
+.k-empty.big{font-size:40px;line-height:1.6;padding:30px 16px}
 .modeCard.kid::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:2px;background:linear-gradient(90deg,#ff7ab6,#ffd166,#38bdf8,#ff7ab6);background-size:300% 100%;animation:goldflow 4s linear infinite;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
 .modeCard.kid .mi{animation:kbounce 2.4s ease-in-out infinite}
 .kps{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;color:var(--tx)}
