@@ -468,12 +468,37 @@ class H(SimpleHTTPRequestHandler):
                 return
             K.delete_data(uid, bool(req.get('keepProfile')))
             return self.send_json(200, {'ok': True})
+        # ----- live mic / camera: off by default for everyone except the account owner; any other account must agree to it itself before the
+        # owner turns it on for that account in the admin panel (see /api/admin/users/<id>/features)
+        if path == '/api/kids/av/agree' and method == 'POST':
+            K.av_agree(uid, self.client_ip())
+            return self.send_json(200, {'ok': True})
+        if path == '/api/kids/av/agreement' and method == 'GET':
+            return self.send_json(200, {'agreed': K.av_agreed(uid), 'avFeature': self.has('kids_av')})
+        if path == '/api/kids/av' and method == 'GET':
+            if not self.has('kids_av'):
+                return self.send_json(403, {'error': 'feature'})
+            return self.send_json(200, K.av_status(uid))
+        if path == '/api/kids/av' and method == 'POST':
+            if not self.has('kids_av'):
+                return self.send_json(403, {'error': 'feature'})
+            av = K.av_set(uid, req.get('mic'), req.get('cam'))
+            return self.send_json(400, {'error': 'profile'}) if av is None else self.send_json(200, av)
+        if path == '/api/kids/av/push' and method == 'POST':
+            if not self.has('kids_av'):
+                return self.send_json(403, {'error': 'feature'})
+            if not rate_ok(self.client_ip() + ':avpush', 240, 60):
+                return self.send_json(429, {'error': 'slow down'})
+            ok = K.av_push(uid, str(req.get('kind', '')), req.get('data'), str(req.get('mime', '')))
+            return self.send_json(200, {'ok': ok})
         # ----- the parent's phone
         if path == '/api/family/link' and method == 'POST':
             if not rate_ok(self.client_ip() + ':flink', 10, 300):
                 return self.send_json(429, {'error': 'slow down'})
             cid, err = K.link(uid, req.get('code'))
             return self.send_json(429 if err == 'slow' else 400, {'error': err}) if err else self.send_json(200, {'child': K.summary(cid, uid)})
+        if path == '/api/family/code' and method == 'POST':             # the parent's OWN invite code: a brand-new child device uses it to join with no token at all
+            return self.send_json(200, {'code': K.parent_code(uid), 'minutes': 30})
         if path == '/api/family/children' and method == 'GET':
             return self.send_json(200, {'children': [x for x in (K.summary(c, uid) for c in K.children_of(uid)) if x]})
         m = re.match(r'^/api/family/child/(\d+)(?:/(config|unlink|consent))?$', path)
@@ -488,7 +513,7 @@ class H(SimpleHTTPRequestHandler):
                 except (ValueError, OverflowError):
                     hrs = 24
                 return self.send_json(200, {'summary': K.summary(cid, uid), 'report': K.report(cid, 7), 'feed': K.feed(cid), 'config': K.config(cid), 'locs': K.locs(cid, hrs) if (K.profile(cid) or {}).get('consent') else [],
-                                            'parentPos': K.parent_pos([uid])})
+                                            'parentPos': K.parent_pos([uid]), 'av': K.av_status(cid), 'avFeature': self.has('kids_av')})
             if act == 'config' and method == 'POST':
                 err = K.set_config(cid, req.get('config'))
                 return self.send_json(400, {'error': err}) if err else self.send_json(200, {'config': K.config(cid)})
@@ -498,6 +523,22 @@ class H(SimpleHTTPRequestHandler):
             if act == 'unlink' and method == 'POST':
                 K.unlink(cid, uid)
                 return self.send_json(200, {'ok': True})
+        m = re.match(r'^/api/family/child/(\d+)/av/(open|close|pull)$', path)
+        if m:
+            cid, act = int(m.group(1)), m.group(2)
+            if not child_of_parent(cid):
+                return
+            if not self.has('kids_av'):
+                return self.send_json(403, {'error': 'feature'})
+            kind = str((req if method == 'POST' else {'kind': q.get('kind', [''])[0]}).get('kind', ''))
+            if act == 'open' and method == 'POST':
+                ok, err = K.av_open(uid, cid, kind)
+                return self.send_json(200 if ok else 400, {'ok': ok, 'error': err})
+            if act == 'close' and method == 'POST':
+                return self.send_json(200, {'ok': K.av_close(uid, cid, kind)})
+            if act == 'pull' and method == 'GET':
+                r = K.av_pull(uid, cid, kind)
+                return self.send_json(200, r or {'live': False})
         if path == '/api/family/msg' and method == 'POST':
             try:
                 child = int(req.get('child') or 0)
@@ -554,6 +595,12 @@ class H(SimpleHTTPRequestHandler):
             if not rate_ok(self.client_ip(), 60, 60):
                 return self.send_json(429, {'error': 'slow down'})
             return self.send_json(200, {'status': ACC.status_for_device(q.get('device', [''])[0]) if token() else 'none'})
+        if u.path == '/api/kids/code/check' and method == 'GET':        # a brand-new child device checks its parent's code before filling in the rest of sign-up; no auth, so it is rate-limited hard
+            if not rate_ok(self.client_ip() + ':kcc', 20, 300) or not rate_ok('kcc-all', 400, 600):
+                return self.send_json(429, {'error': 'slow down'})
+            return self.send_json(200, {'ok': KIDS.parent_code_peek(q.get('code', [''])[0]) is not None})
+        if u.path == '/api/kids/join' and method == 'POST':             # a brand-new child device joins with ONLY its parent's invite code: creates its own account and links it, no owner approval, no token ever typed
+            return self.kids_join()
         if u.path == '/api/admin/login' and method == 'POST':
             return self.admin_login()
         if not self.authed():
@@ -661,6 +708,33 @@ class H(SimpleHTTPRequestHandler):
             return self.send_json(400 if err != 'full' else 503, {'error': err})
         return self.send_json(200, {'ok': True, 'status': u['status']})        # the token is NEVER returned here: only the owner can give it
 
+    def kids_join(self):
+        """A brand-new child device, with no token at all, presents its parent's invite code. On success this creates its own account
+        (active at once, no owner approval -- the parent's code IS the approval), links it to that parent, and hands back a token the
+        app stores silently. Heavily rate-limited: account creation itself is not capped, but GUESSING a 6-digit code must stay hard."""
+        ip = self.client_ip()
+        if not rate_ok(ip + ':kjoin', 20, 300) or not rate_ok('kjoin-all', 300, 600):
+            return self.send_json(429, {'error': 'slow down'})
+        try:
+            req = json.loads(self.read_body() or b'{}')
+            assert isinstance(req, dict)
+        except Exception:
+            return self.send_json(400, {'error': 'json'})
+        if KIDS.parent_code_peek(req.get('code')) is None:
+            return self.send_json(400, {'error': 'code'})
+        u, err = ACC.create_kid(req.get('name'), req.get('device'))
+        if err:
+            return self.send_json(400, {'error': err})
+        errp = KIDS.set_profile(u['id'], req.get('name'), req.get('age'), req.get('cls'), req.get('avatar'), str(req.get('newPin', '')))
+        if errp:
+            ACC.act(u['id'], 'delete')                                   # the code was good but the profile was not: do not leave a half-made account behind
+            return self.send_json(400, {'error': errp})
+        if KIDS.parent_code_link(req.get('code'), u['id']) is None:
+            ACC.act(u['id'], 'delete')
+            return self.send_json(400, {'error': 'code'})
+        ACC.audit('owner', 'kid-self-join', u['name'], 'device ' + hashlib.sha256(str(req.get('device', '')).encode()).hexdigest()[:10])
+        return self.send_json(200, {'token': u['token'], 'profile': KIDS.profile(u['id']), 'config': KIDS.config(u['id'])})
+
     # ------------------------------------------------------------------ admin API (owner only)
     def _user_state(self, uid):
         try:
@@ -686,9 +760,11 @@ class H(SimpleHTTPRequestHandler):
                 'stats': {'tasks': len(st.get('tasks', [])), 'docs': len(st.get('docs', [])), 'bytes': os.path.getsize(ACC.user_db(u['id'])) if os.path.exists(ACC.user_db(u['id'])) else 0}}
         if stu:
             card['student'] = {'name': stu['profile'].get('sname'), 'class': stu['profile'].get('sclass'), 'quizAvg': stu['quizAvg'], 'studied': stu['chaptersStudied'], 'chapters': stu['chaptersTotal'], 'streak': stu['streak']}
+        card['avAgreed'] = bool(KIDS and KIDS.av_agreed(u['id']))          # has THIS account agreed to the live mic/camera feature itself (a precondition, not the switch)
         kp = KIDS.profile(u['id']) if KIDS else None
-        if kp:                                                            # Kids: the owner sees only that it exists and whether location sharing is on. Never where the child is.
-            card['kids'] = {'name': kp['name'], 'age': kp['age'], 'cls': kp['cls'], 'location': bool(kp['consent']), 'parents': len(KIDS.parents_of(u['id']))}
+        if kp:                                                            # Kids: the owner sees only that it exists and whether location/mic/cam sharing is ON. Never the location or any audio/video itself.
+            av = (KIDS.config(u['id']) or {}).get('av') or {}
+            card['kids'] = {'name': kp['name'], 'age': kp['age'], 'cls': kp['cls'], 'location': bool(kp['consent']), 'parents': len(KIDS.parents_of(u['id'])), 'mic': bool(av.get('mic')), 'cam': bool(av.get('cam'))}
         if full:
             card['studentFull'] = stu; card['business'] = adminlib.business_summary(st, now)
         return card
@@ -793,7 +869,10 @@ class H(SimpleHTTPRequestHandler):
             if act == 'note':
                 ACC.note(uid, r.get('note', '')); ACC.audit('owner', 'note', u0['name'], str(r.get('note', ''))[:60]); return self.send_json(200, {'ok': True})
             if act == 'features':
-                f = ACC.set_features(uid, r.get('features') or {}); ACC.audit('owner', 'features', u0['name'], json.dumps(f)); return self.send_json(200, {'features': f})
+                want = r.get('features') or {}
+                if want.get('kids_av') and not KIDS.av_agreed(uid):        # live mic/camera: only after THIS user agreed to it themselves, in their own account
+                    return self.send_json(400, {'error': 'av_agree'})
+                f = ACC.set_features(uid, want); ACC.audit('owner', 'features', u0['name'], json.dumps(f)); return self.send_json(200, {'features': f})
             if act == 'setpass':
                 u, err = ACC.setpass(uid, r.get('password'), owner_tok)
                 if err:

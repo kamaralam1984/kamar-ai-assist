@@ -71,6 +71,7 @@
     const alerts = (PN.alerts || []).slice(0, 12).map(a => `<div class="k-alert ${a.kind}"><div><b>${e2(a.title)}</b><small>${e2(a.body || '')}</small></div><span>${e2(ago(a.at))}</span></div>`).join('');
     return `<div class="k-card k-consentcard ${cons ? 'on' : ''}"><div class="k-conrow"><div><b>📍 ${e2(_t('लोकेशन शेयरिंग'))}</b><small>${cons ? e2(_t('चालू — बच्चे की स्क्रीन पर "📍 लोकेशन चालू" दिखता है')) : e2(_t('बंद — कोई लोकेशन नहीं ली जा रही'))}</small></div><button class="k-switch ${cons ? 'on' : ''}" data-kp="consent" data-on="${cons ? 0 : 1}" aria-label="toggle"><i></i></button></div>
       ${cons ? '' : `<p class="k-sub small">${e2(_t('चालू करने पर बच्चे के फ़ोन में लोकेशन की अनुमति माँगी जाएगी। सिर्फ़ आप देख सकेंगे।'))}</p>`}</div>
+      ${PN.src.kind === 'family' ? avCard() : ''}
       ${cons && last ? `<div class="k-card k-last"><div class="k-lastrow"><div><small>${e2(_t('आख़िरी लोकेशन'))}</small><b>${e2(ago(last.at))} · ${e2(clock(last.at))}</b></div><div class="k-lastr">${last.batt != null ? '🔋 ' + last.batt + '%' : ''}<small>±${Math.round(last.acc || 0)} m</small></div></div>${(s.inside || []).length ? `<div class="k-inside">✅ ${e2(_t('अभी यहाँ: {0}', [s.inside.join(', ')]))}</div>` : ''}<div class="k-pdists">${near}${s.parentDist != null ? `<span class="k-pdist">👪 ${e2(_t('आपसे दूरी'))}: <b>${e2(MP.fmtDist(s.parentDist))}</b></span>` : ''}</div></div>` : cons ? `<div class="k-note">${e2(_t('अभी तक कोई लोकेशन नहीं आई। बच्चे के फ़ोन में Piyu खुला रखें और लोकेशन चालू रखें।'))}</div>` : ''}
       <div class="k-mapbox" id="kMapBox"></div>
       <div class="k-sec"><h3>${e2(_t('सुरक्षित जगहें'))}</h3></div><div id="kPlaces">${places.map((p, i) => placeRow(p, i)).join('') || `<p class="k-sub small">${e2(_t('घर और स्कूल जोड़िए — बच्चा पहुँचे/निकले तो सूचना मिलेगी।'))}</p>`}</div>
@@ -83,6 +84,48 @@
       <button class="k-btn" data-kp="savecfg">💾 ${e2(_t('सेव करें'))}</button>
       ${PN.src.kind === 'family' ? `<div class="k-sec"><h3>${e2(_t('मेरी लोकेशन'))}</h3></div><div class="k-card"><div class="k-conrow"><div><b>👪 ${e2(_t('मेरी लोकेशन भी दिखाओ'))}</b><small>${e2(_t('ताकि "आपसे दूरी" दिख सके। सिर्फ़ तब जब ऐप खुला हो।'))}</small></div><button class="k-switch ${(S.settings.family || {}).sharePos ? 'on' : ''}" data-kp="sharepos" aria-label="toggle"><i></i></button></div></div>` : ''}
       <div class="k-sec"><h3>${e2(_t('सूचनाएँ'))}</h3></div><div class="k-alerts">${alerts || `<p class="k-sub small">${e2(_t('अभी कोई सूचना नहीं'))}</p>`}</div>`;
+  }
+  /* ---------------- live mic/camera: only while the CHILD has that switch on; the child's screen always shows a big red notice while this is open ---------------- */
+  function avCard() {
+    const av = (PN.d && PN.d.av) || { mic: { on: false, live: false }, cam: { on: false, live: false } };
+    if (!(PN.d && PN.d.avFeature)) return `<div class="k-card"><b>🎙️📷 ${e2(_t('लाइव सुनना/देखना'))}</b><p class="k-sub small">${e2(_t('यह feature अभी आपके खाते के लिए चालू नहीं है।'))}</p></div>`;
+    const row = (kind, icon, label) => { const on = av[kind] && av[kind].on; return `<div class="k-conrow"><div><b>${icon} ${e2(label)}</b><small>${on ? e2(_t('बच्चे ने इजाज़त दी है')) : e2(_t('बच्चे ने अभी इजाज़त नहीं दी'))}</small></div>${on ? `<button class="k-chipbtn" data-kp="avopen" data-kind="${kind}">${kind === 'mic' ? '🎧 ' + e2(_t('सुनो')) : '👁️ ' + e2(_t('देखो'))}</button>` : ''}</div>`; };
+    return `<div class="k-card"><b>🎙️📷 ${e2(_t('ज़रूरत पड़ने पर सुनना/देखना'))}</b><p class="k-sub small">${e2(_t('सिर्फ़ तभी काम करता है जब बच्चे ने खुद इजाज़त दी हो, और सुनते/देखते वक़्त बच्चे की स्क्रीन पर हमेशा एक बड़ा लाल निशान दिखता है। कुछ भी रिकॉर्ड नहीं होता।'))}</p>${row('mic', '🎤', _t('आवाज़'))}${row('cam', '📷', _t('कैमरा'))}</div>`;
+  }
+  let AVL = null;
+  async function openAvLive(kind) {
+    const cid = PN.src.cid; const r = await api('/api/family/child/' + cid + '/av/open', { kind });
+    if (!r.ok || !(r.j && r.j.ok)) { toast((r.j && r.j.error === 'off') ? _t('बच्चे ने अभी बंद कर दिया') : _t('शुरू नहीं हो पाया')); return; }
+    AVL = { kind, cid, queue: [], playing: false };
+    drawAvLive(); avLivePoll(); AVL.pollT = setInterval(avLivePoll, kind === 'mic' ? 1200 : 900);
+  }
+  function drawAvLive() {
+    if (!AVL) return;
+    P.ov(`<div class="k-center"><div class="k-burst">${AVL.kind === 'mic' ? '🎧' : '👁️'}</div><h2>${e2(_t('🔴 लाइव'))}</h2>
+      ${AVL.kind === 'cam' ? '<img id="avImg" style="max-width:260px;border-radius:14px;margin:10px auto;display:block;background:#111" alt="">' : `<p class="k-sub">${e2(_t('सुना जा रहा है…'))}</p>`}
+      <p class="k-sub small" id="avStale" hidden>${e2(_t('⏳ संकेत नहीं मिल रहा — बच्चे का ऐप बंद या background में हो सकता है'))}</p>
+      <button class="k-btn red" data-kp="avclose">${e2(_t('बंद करो'))}</button></div>`, 'kavlive', 'k-ov-solid red');
+  }
+  async function avLivePoll() {
+    if (!AVL) return;
+    const r = await api('/api/family/child/' + AVL.cid + '/av/pull?kind=' + AVL.kind);
+    const stale = el('avStale');
+    if (!r.ok || !r.j || !r.j.live) { if (stale) stale.hidden = false; return; }
+    if (stale) stale.hidden = true;
+    if (!r.j.chunk) return;
+    if (AVL.kind === 'cam') { const img = el('avImg'); if (img) img.src = 'data:' + (r.j.mime || 'image/jpeg') + ';base64,' + r.j.chunk; }
+    else { AVL.queue.push('data:' + (r.j.mime || 'audio/webm') + ';base64,' + r.j.chunk); if (AVL.queue.length > 4) AVL.queue.splice(0, AVL.queue.length - 4); avPlayNext(); }
+  }
+  function avPlayNext() {
+    if (!AVL || AVL.playing || !AVL.queue.length) return;
+    AVL.playing = true; const au = new Audio(AVL.queue.shift());
+    au.onended = au.onerror = () => { if (AVL) AVL.playing = false; avPlayNext(); };
+    au.play().catch(() => { if (AVL) AVL.playing = false; });
+  }
+  async function closeAvLive() {
+    if (!AVL) return; clearInterval(AVL.pollT); const kind = AVL.kind, cid = AVL.cid; AVL = null;
+    try { await api('/api/family/child/' + cid + '/av/close', { kind }); } catch (e) { }
+    draw();
   }
   const placeRow = (p, i) => `<div class="k-place" data-i="${i}"><span class="k-place-ic">${MP.PLACE_ICON[p.type] || '📍'}</span><div class="k-place-f"><input class="pp-name" value="${e2(p.name)}" maxlength="30"><div class="k-place-r"><select class="pp-r">${[50, 100, 150, 200, 300, 500, 800].map(r => `<option ${r === p.r ? 'selected' : ''} value="${r}">${r} m</option>`).join('')}</select><small>${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</small></div></div><div class="k-place-b"><button data-kp="here" data-i="${i}" title="${e2(_t('अभी की जगह'))}">📍</button><button data-kp="pickmap" data-i="${i}" title="${e2(_t('नक़्शे से चुनो'))}">🗺️</button><button data-kp="delplace" data-i="${i}" title="${e2(_t('हटाओ'))}">🗑️</button></div></div>`;
   async function mountMap() {
@@ -184,6 +227,8 @@
       case 'clang': K().clang = b.dataset.l; save(); draw(); break;
       case 'tostudent': case 'tobiz': { if (!confirm(_t('खाता बदलें? बच्चे का रूटीन अलार्म हट जाएगा।'))) break; const m = a === 'tostudent' ? 'student' : 'business'; destroyMap(); PN = null; P.closeOv(); S.settings.mode = m; save(); PiyuStudent.applyMode(); if (m === 'student') PiyuStudent.onboard(); break; }
       case 'unlink': if (confirm(_t('इस बच्चे को अपनी सूची से हटाएँ?'))) { await api('/api/family/child/' + PN.src.cid + '/unlink', {}); PN = null; P.closeOv(); family(); } break;
+      case 'avopen': openAvLive(b.dataset.kind); break;
+      case 'avclose': closeAvLive(); break;
       case 'export': { const r = await api('/api/kids/export', { pin: P.pinFresh() }); if (r.ok) { const blob = new Blob([JSON.stringify(r.j, null, 1)], { type: 'application/json' }), a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = 'piyu-kids-data.json'; a2.click(); setTimeout(() => URL.revokeObjectURL(a2.href), 4000); } else toast(_t('डाउनलोड नहीं हुआ')); break; }
       case 'wipe': if (confirm(_t('बच्चे का सारा डेटा (गतिविधि, लोकेशन, प्रोफ़ाइल) हमेशा के लिए मिटाएँ?')) && confirm(_t('पक्का? यह वापस नहीं आएगा।'))) { const r = await api('/api/kids/delete', { pin: P.pinFresh() }); if (r.ok) { P.locStop(); S.settings.kid = null; S.settings.kidPin = ''; S.settings.mode = undefined; save(); PN = null; P.closeOv(); PiyuStudent.applyMode(); location.reload(); } else toast(_t('नहीं मिट पाया')); } break;
     }
@@ -207,7 +252,8 @@
     const list = kids.map(c => `<button class="k-child" data-kf="open" data-id="${c.id}"><span class="k-child-av">${e2(c.avatar)}</span><div><b>${e2(c.name)}</b><small>${c.consent && c.last ? '📍 ' + e2(ago(c.last.at)) + (c.inside && c.inside.length ? ' · ✅ ' + e2(c.inside.join(', ')) : '') : e2(c.consent ? _t('लोकेशन का इंतज़ार') : _t('लोकेशन बंद'))}</small></div><span class="k-child-r">🔥${c.streak || 0}<small>⭐${c.starsToday || 0}</small></span></button>`).join('');
     P.ov(`<div class="k-pp"><div class="k-pp-head"><button class="k-x" data-kf="close" aria-label="close">✕</button><div><small>Piyu</small><h2>👪 ${e2(_t('फ़ैमिली'))}</h2></div></div>
       <div class="k-pp-body"><div class="k-sec"><h3>${e2(_t('मेरे बच्चे'))}</h3></div>${list || `<p class="k-sub small">${e2(_t('अभी कोई बच्चा नहीं जुड़ा।'))}</p>`}
-      <div class="k-card"><b>➕ ${e2(_t('बच्चा जोड़ें'))}</b><p class="k-sub small">${e2(_t('बच्चे के फ़ोन में Piyu Kids → पैरेंट → सेटिंग → "जोड़ने का कोड बनाएँ" से 6 अंकों का कोड लीजिए।'))}</p><div class="k-linkrow"><input id="kfCode" inputmode="numeric" maxlength="6" placeholder="••••••"><button class="k-btn" data-kf="link">🔗 ${e2(_t('जोड़ें'))}</button></div><div class="k-msg" id="kfMsg"></div></div>
+      <div class="k-card"><b>👶 ${e2(_t('नए बच्चे को जोड़ें'))}</b><p class="k-sub small">${e2(_t('बच्चे के नए फ़ोन में कोई token नहीं चाहिए। कोड बनाइए, बच्चे को बताइए — बच्चा Piyu खोलकर "Kids" चुने और वही कोड डाल दे। बस, जुड़ भी जाएगा और account भी अपने-आप बन जाएगा।'))}</p><button class="k-btn" data-kf="pcode">🔑 ${e2(_t('कोड बनाएँ'))}</button><div id="kfPCode" class="k-code"></div></div>
+      <div class="k-card"><b>➕ ${e2(_t('पहले से बने बच्चे को जोड़ें'))}</b><p class="k-sub small">${e2(_t('अगर बच्चे का Piyu account पहले से है: बच्चे के फ़ोन में Piyu Kids → पैरेंट → सेटिंग → "जोड़ने का कोड बनाएँ" से 6 अंकों का कोड लीजिए।'))}</p><div class="k-linkrow"><input id="kfCode" inputmode="numeric" maxlength="6" placeholder="••••••"><button class="k-btn" data-kf="link">🔗 ${e2(_t('जोड़ें'))}</button></div><div class="k-msg" id="kfMsg"></div></div>
       ${alerts.length ? `<div class="k-sec"><h3>${e2(_t('हाल की सूचनाएँ'))}</h3></div><div class="k-alerts">${alerts.slice(0, 10).map(a => `<div class="k-alert ${a.kind}"><div><b>${e2(a.title)}</b><small>${e2(a.body || '')}</small></div><span>${e2(ago(a.at))}</span></div>`).join('')}</div>` : ''}</div></div>`, 'kfamily', 'k-ov-parent');
     if (alerts.length) api('/api/family/alerts/seen', { upto: Math.max(...alerts.map(a => a.id)) });
   }
@@ -215,6 +261,10 @@
     const b = e.target.closest('[data-kf]'); if (!b) return; const a = b.dataset.kf;
     if (a === 'close') P.closeOv();
     else if (a === 'open') openPanel(srcFamily(+b.dataset.id));
+    else if (a === 'pcode') {
+      const r = await api('/api/family/code', {}); const box = el('kfPCode');
+      if (box) box.innerHTML = r.ok ? `<b>${e2(r.j.code)}</b><small>${e2(_t('30 मिनट के लिए'))}</small>` : e2(_t('कोड नहीं बन पाया'));
+    }
     else if (a === 'link') {
       const code = (el('kfCode').value || '').trim(); const msg = el('kfMsg'); if (!/^\d{6}$/.test(code)) { msg.textContent = _t('6 अंकों का कोड डालिए'); return; }
       const r = await api('/api/family/link', { code }); if (!r.ok) { msg.textContent = r.j.error === 'self' ? _t('यह आपका अपना फ़ोन है') : _t('कोड ग़लत है या पुराना हो गया'); return; }

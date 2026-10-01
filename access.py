@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS admin_sessions(hash TEXT PRIMARY KEY, exp INTEGER);
 CREATE TABLE IF NOT EXISTS visitors(ip TEXT PRIMARY KEY, ua TEXT, first INTEGER, last INTEGER, hits INTEGER DEFAULT 0, country TEXT DEFAULT '', cc TEXT DEFAULT '', city TEXT DEFAULT '', path TEXT DEFAULT '');
 """
-FEATURES = ('voice', 'ai', 'web', 'docs', 'student', 'business', 'kids')
+FEATURES = ('voice', 'ai', 'web', 'docs', 'student', 'business', 'kids', 'kids_av')
+FEATURES_OFF_BY_DEFAULT = {'kids_av'}                                    # kids' live mic/camera: off for everyone except the owner until that user has agreed to it themselves (kids.av_agreed)
 EXTRA_COLS = (('features', "TEXT DEFAULT ''"), ('country', "TEXT DEFAULT ''"), ('cc', "TEXT DEFAULT ''"), ('city', "TEXT DEFAULT ''"), ('last_ua', "TEXT DEFAULT ''"), ('first_seen', 'INTEGER'))
 TZ_MIN = int(os.environ.get('PIYU_TZ_MIN', '330'))                      # the day boundary for usage statistics (default: India, UTC+5:30)
 EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,190}\.[A-Za-z]{2,24}$')
@@ -106,6 +107,23 @@ class Access:
                 return None, 'full'
             c.execute('INSERT INTO users(name,phone,token,status,reg_device,created,last_ip) VALUES(?,?,?,?,?,?,?)',
                       (name, clean_phone(phone), self.new_token(), 'pending', dh, int(time.time() * 1000), ip))
+            return dict(c.execute('SELECT * FROM users WHERE id=last_insert_rowid()').fetchone()), None
+
+    # ---------- a brand-new CHILD device self-registers by presenting a valid parent invite code (see kids.parent_code*, server.kids_join) ----------
+    # no owner approval needed: the parent's own code is the approval. Active immediately, bound to that device for good, limited to Kids + the
+    # kid-safe AI/voice it needs -- never business/student/docs, and never the live mic/camera (that still needs the separate owner + agreement gate).
+    def create_kid(self, name, device):
+        name = re.sub(r'\s+', ' ', str(name or '')).strip()
+        if not NAME_RE.match(name):
+            return None, 'name'
+        device = str(device or '')
+        if not 16 <= len(device) <= 200:
+            return None, 'device'
+        now = int(time.time() * 1000)
+        feats = json.dumps({k: k in ('kids', 'ai', 'voice') for k in FEATURES})
+        with self.lock, self._con() as c:
+            c.execute('INSERT INTO users(name,phone,token,status,created,approved,device_hash,bound,features) VALUES(?,?,?,?,?,?,?,?,?)',
+                      (name, '', self.new_token(), 'active', now, now, sha(device), now, feats))
             return dict(c.execute('SELECT * FROM users WHERE id=last_insert_rowid()').fetchone()), None
 
     def status_for_device(self, device):
@@ -197,7 +215,7 @@ class Access:
     # ---------- per-user feature switches ----------
     @staticmethod
     def feature_map(u):
-        f = {k: True for k in FEATURES}
+        f = {k: k not in FEATURES_OFF_BY_DEFAULT for k in FEATURES}
         try:
             for k, v in json.loads((u or {}).get('features') or '{}').items():
                 if k in f:

@@ -7,8 +7,8 @@ android {
         applicationId "in.piyu.assistant"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 29847822
-        versionName "1.29847822"
+        versionCode 29847915
+        versionName "1.29847915"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

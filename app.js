@@ -141,9 +141,11 @@ function accessProblem(code) {
 }
 function askToken(code) {
   const dlg = $('#tokDlg'); if (!dlg || dlg.open) return;
+  if (document.querySelector('.k-wiz') || document.getElementById('jcIn')) { setTimeout(() => askToken(code), 1000); return; }     // never trap a child mid sign-up (or mid "parent's code") under this adult dialog
+  if (S.settings.token) { tokenAsked = false; return; }           // got a working token meanwhile (e.g. a child just self-joined): this ask is stale
   $('#tokIn').value = ''; $('#tokMsg').textContent = (typeof code === 'string' && code !== 'token' && ACCESS_MSG[code]) ? '⚠ ' + _t(ACCESS_MSG[code]) : '';
   try { $('#reqName').value = localStorage.getItem('piyu.reqName') || ''; $('#reqPhone').value = localStorage.getItem('piyu.reqPhone') || ''; } catch (e) { }
-  { const must = !S.settings.token && !localStorage.getItem('piyu.req'); $('#tokLater').hidden = must; dlg.oncancel = e => { if (must) e.preventDefault(); }; }      // nobody can wave the dialog away without a token or a request
+  { const kidsNow = document.body.dataset.mode === 'kids'; const must = !kidsNow && !S.settings.token && !localStorage.getItem('piyu.req'); $('#tokLater').hidden = must; dlg.oncancel = e => { if (must) e.preventDefault(); }; }      // nobody can wave the dialog away without a token or a request -- except in Kids mode, where a child must never be left stuck behind it; the small banner keeps reminding instead
   $('#reqMsg').textContent = ''; if (localStorage.getItem('piyu.req')) { checkReg(); clearInterval(regTimer); regTimer = setInterval(() => { if (!$('#tokDlg').open) clearInterval(regTimer); else checkReg(); }, 15000); }
   try { dlg.showModal(); } catch (e) { const t = prompt(_t('इस server का Sync token डालें (जो सिर्फ़ आपको पता है)'), ''); if (t) applyToken(t); return; }
   setTimeout(() => $('#tokIn').focus(), 200);

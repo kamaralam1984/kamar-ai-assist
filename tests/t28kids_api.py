@@ -19,6 +19,20 @@ def call(u, method, path, body=None):
     try:
         with urllib.request.urlopen(r, timeout=10) as f: return f.status, json.loads(f.read() or b'{}')
     except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b'{}')
+def owner_call(method, path, body=None):
+    r = urllib.request.Request('http://127.0.0.1:%d%s' % (PORT, path), method=method, data=None if body is None else json.dumps(body).encode(),
+                               headers={'X-Piyu-Token': env['PIYU_TOKEN'], 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(r, timeout=10) as f: return f.status, json.loads(f.read() or b'{}')
+    except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b'{}')
+def raw(tok, dev, method, path, body=None):
+    headers = {'Content-Type': 'application/json'}
+    if tok: headers['X-Piyu-Token'] = tok
+    if dev: headers['X-Piyu-Device'] = dev
+    r = urllib.request.Request('http://127.0.0.1:%d%s' % (PORT, path), method=method, data=None if body is None else json.dumps(body).encode(), headers=headers)
+    try:
+        with urllib.request.urlopen(r, timeout=10) as f: return f.status, json.loads(f.read() or b'{}')
+    except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b'{}')
 try:
     for _ in range(60):
         try: urllib.request.urlopen('http://127.0.0.1:%d/' % PORT, timeout=1); break
@@ -65,6 +79,49 @@ try:
     for _ in range(6): s, r = call(stranger, 'POST', '/api/family/link', {'code': '000001'})
     chk('link brute force limited', s == 429)
     s, r = call(stranger, 'POST', '/api/ai/chat', {'q': 'hi', 'kid': True}); chk('kid ai w/o profile no 500', s in (200, 503))
+    # ---- live mic/camera: off by default, gated by an in-app agreement + an owner-only admin switch, child's own toggle, parent must be linked
+    kid3, mom3 = A.add('Kid3'), A.add('Mom3')
+    s, r = call(kid3, 'POST', '/api/kids/profile', {'name': 'Vivaan', 'age': 9, 'cls': '4', 'avatar': '🐯', 'newPin': '1234'}); chk('av: kid3 signs up', s == 200)
+    s, r = call(kid3, 'POST', '/api/kids/code', {'pin': '1234'}); code3 = r.get('code')
+    s, r = call(mom3, 'POST', '/api/family/link', {'code': code3}); chk('av: mom3 links', s == 200)
+    s, r = call(kid3, 'GET', '/api/kids/av'); chk('av: feature off by default -> 403', s == 403 and r['error'] == 'feature')
+    s, r = owner_call('POST', '/api/admin/users/%d/features' % kid3['id'], {'features': {'kids_av': True}}); chk('av: admin cannot enable without agreement', s == 400 and r['error'] == 'av_agree')
+    s, r = call(kid3, 'POST', '/api/kids/av/agree', {}); chk('av: kid3 agrees', s == 200)
+    s, r = call(mom3, 'POST', '/api/kids/av/agree', {}); chk('av: mom3 agrees', s == 200)
+    s, r = owner_call('POST', '/api/admin/users/%d/features' % kid3['id'], {'features': {'kids_av': True}}); chk('av: admin enables for kid3 after agreement', s == 200 and r['features']['kids_av'])
+    s, r = owner_call('POST', '/api/admin/users/%d/features' % mom3['id'], {'features': {'kids_av': True}}); chk('av: admin enables for mom3 after agreement', s == 200 and r['features']['kids_av'])
+    s, r = call(kid3, 'GET', '/api/kids/av'); chk('av: status now reachable, both off', s == 200 and r == {'mic': {'on': False, 'live': False}, 'cam': {'on': False, 'live': False}})
+    cid3 = kid3['id']
+    s, r = call(mom3, 'POST', '/api/family/child/%d/av/open' % cid3, {'kind': 'mic'}); chk('av: open refused while child toggle is off', s == 400 and r['error'] == 'off')
+    s, r = call(kid3, 'POST', '/api/kids/av', {'mic': True}); chk('av: kid3 turns mic on (no PIN needed)', s == 200 and r['mic'])
+    s, r = call(stranger, 'POST', '/api/family/child/%d/av/open' % cid3, {'kind': 'mic'}); chk('av: a non-parent cannot open', s == 403)
+    s, r = call(mom3, 'POST', '/api/family/child/%d/av/open' % cid3, {'kind': 'mic'}); chk('av: linked parent opens mic', s == 200 and r['ok'])
+    s, r = call(kid3, 'GET', '/api/kids/av'); chk('av: child sees it is live now', s == 200 and r['mic']['live'])
+    import base64 as _b64
+    chunk3 = _b64.b64encode(b'a-short-audio-chunk').decode()
+    s, r = call(kid3, 'POST', '/api/kids/av/push', {'kind': 'mic', 'data': chunk3, 'mime': 'audio/webm'}); chk('av: child pushes a chunk', s == 200 and r['ok'])
+    s, r = call(mom3, 'GET', '/api/family/child/%d/av/pull?kind=mic' % cid3); chk('av: parent pulls the live chunk', s == 200 and r.get('live') and r.get('chunk') == chunk3)
+    s, r = call(stranger, 'GET', '/api/family/child/%d/av/pull?kind=mic' % cid3); chk('av: a non-parent cannot pull', s == 403)
+    s, r = call(mom3, 'POST', '/api/family/child/%d/av/close' % cid3, {'kind': 'mic'}); chk('av: parent closes', s == 200 and r['ok'])
+    s, r = call(kid3, 'GET', '/api/kids/av'); chk('av: child sees live go false again', s == 200 and not r['mic']['live'])
+    s, r = call(kid3, 'POST', '/api/kids/av', {'mic': False}); chk('av: kid3 turns mic back off', s == 200 and not r['mic'])
+    # ---- parent invite code: a brand-new child device joins with ONLY the code, no token ever ----
+    mom4 = A.add('Mom4')
+    s, r = call(mom4, 'POST', '/api/family/code', {}); pcode = r.get('code'); chk('parent gets an invite code', s == 200 and len(pcode or '') == 6)
+    s, r = raw(None, None, 'GET', '/api/kids/code/check?code=000000'); chk('no-auth code check: bad', s == 200 and r['ok'] is False)
+    s, r = raw(None, None, 'GET', '/api/kids/code/check?code=%s' % pcode); chk('no-auth code check: good', s == 200 and r['ok'] is True)
+    DEV4 = 'device-id-for-a-brand-new-kid-4567'
+    s, r = raw(None, None, 'POST', '/api/kids/join', {'code': '000000', 'device': DEV4, 'name': 'Chintu', 'age': 7, 'cls': '2', 'avatar': '🐼', 'newPin': '1234'})
+    chk('join: wrong code refused, no account made', s == 400 and r['error'] == 'code')
+    s, r = raw(None, None, 'POST', '/api/kids/join', {'code': pcode, 'device': DEV4, 'name': 'Chintu', 'age': 7, 'cls': '2', 'avatar': '🐼', 'newPin': '1234'})
+    chk('join: correct code creates the account + hands back a token', s == 200 and r.get('token') and r['profile']['name'] == 'Chintu')
+    kid_tok, kid_id = r['token'], r['profile']['uid']
+    s, r = raw(kid_tok, DEV4, 'GET', '/api/kids/me'); chk('new kid can use its own fresh token', s == 200 and r['profile']['name'] == 'Chintu')
+    s, r = call(mom4, 'GET', '/api/family/children'); chk('mom is already linked to the new kid, no separate link step', s == 200 and any(c['id'] == kid_id for c in r['children']))
+    s, r = raw(kid_tok, DEV4, 'GET', '/api/me'); chk('new kid account cannot use business/student (feature-locked)', s == 200 and r['features']['kids'] and not r['features']['student'] and not r['features']['business'] and not r['features']['kids_av'])
+    s, r = raw('wrong-device-token-not-real', 'some-other-device-id-16ch', 'GET', '/api/kids/me'); chk('a stranger cannot use a fake token', s == 401)
+    s, r = raw(None, None, 'POST', '/api/kids/join', {'code': pcode, 'device': 'short', 'name': 'Xx', 'newPin': '1234'}); chk('join: bad device id refused', s == 400 and r['error'] == 'device')
+    s, r = raw(None, None, 'POST', '/api/kids/join', {'code': pcode, 'device': DEV4 + 'b', 'name': '', 'newPin': '1234'}); chk('join: bad name refused, no half-made account', s == 400 and r['error'] == 'name')
 finally:
     srv.terminate()
     try: srv.wait(5)

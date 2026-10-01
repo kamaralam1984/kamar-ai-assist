@@ -6,7 +6,7 @@
     and writes alerts that the parent's phone fetches;
   * location points are kept 7 days, events 60 days, alerts 30 days; nothing else about the child is stored.
 """
-import hashlib, hmac, json, math, os, re, secrets, threading, time
+import base64, hashlib, hmac, json, math, os, re, secrets, threading, time
 
 DAY = 86400000
 KINDS = ('routine_done', 'star', 'game', 'lesson', 'story', 'speak', 'photo', 'session', 'badge', 'level', 'mood', 'weak')
@@ -23,7 +23,11 @@ DEFAULT_ROUTINE = [
     {'id': 'sleep', 'icon': '🌙', 'title': 'So jao', 'time': '21:00', 'days': [0, 1, 2, 3, 4, 5, 6], 'on': True},
 ]
 DEFAULT_CFG = {'routine': DEFAULT_ROUTINE, 'limit_min': 90, 'bed': {'from': '21:00', 'to': '06:30'}, 'places': [], 'late_min': 30, 'gps_off_min': 20,
-               'school': {'arrive_by': '08:30', 'days': [1, 2, 3, 4, 5]}, 'loc_every': 2}
+               'school': {'arrive_by': '08:30', 'days': [1, 2, 3, 4, 5]}, 'loc_every': 2, 'av': {'mic': False, 'cam': False}}
+AV_KINDS = ('mic', 'cam')
+AV_STALE_MS = 20000                                                     # a parent who hasn't polled this long is treated as "not watching"
+AV_MAX_MS = 15 * 60000                                                  # a live session must be re-opened (fresh notice to the child) after this long
+AV_MAX_CHUNK = 260 * 1024                                               # raw bytes, before base64 (one short audio clip or one small camera frame)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS kid_profile(uid INTEGER PRIMARY KEY, name TEXT, age INTEGER, cls TEXT, avatar TEXT, pin_hash TEXT, created INTEGER, consent INTEGER DEFAULT 0, consent_at INTEGER);
@@ -37,10 +41,13 @@ CREATE INDEX IF NOT EXISTS locs_uid ON locs(uid, at);
 CREATE TABLE IF NOT EXISTS loc_share(uid INTEGER PRIMARY KEY, on_ INTEGER DEFAULT 0, at INTEGER, lat REAL, lng REAL);
 CREATE TABLE IF NOT EXISTS family_links(child_uid INTEGER, parent_uid INTEGER, since INTEGER, PRIMARY KEY(child_uid, parent_uid));
 CREATE TABLE IF NOT EXISTS family_codes(code TEXT PRIMARY KEY, child_uid INTEGER, exp INTEGER);
+CREATE TABLE IF NOT EXISTS parent_codes(code TEXT PRIMARY KEY, parent_uid INTEGER, exp INTEGER);
 CREATE TABLE IF NOT EXISTS kid_msgs(id INTEGER PRIMARY KEY AUTOINCREMENT, child_uid INTEGER, parent_uid INTEGER, at INTEGER, text TEXT);
 CREATE TABLE IF NOT EXISTS parent_alerts(id INTEGER PRIMARY KEY AUTOINCREMENT, parent_uid INTEGER, child_uid INTEGER, at INTEGER, kind TEXT, title TEXT, body TEXT, lat REAL, lng REAL, seen INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS parent_alerts_p ON parent_alerts(parent_uid, id);
+CREATE TABLE IF NOT EXISTS kid_av_agree(uid INTEGER PRIMARY KEY, at INTEGER, ip TEXT, ver TEXT);
 """
+AV_AGREE_TEXT_VERSION = '1'                                               # bump this if the agreement wording changes; old agreements then no longer count
 
 
 def haversine(lat1, lng1, lat2, lng2):
@@ -77,6 +84,8 @@ class Kids:
         self._pin_fail = {}
         self._pin_lock = threading.Lock()
         self._link_fail = {}                                                 # parent uid -> times of wrong family codes; None -> all parents
+        self._av = {}                                                        # (child_uid, 'mic'|'cam') -> live session; in memory only, never written to disk
+        self._av_lock = threading.Lock()
 
     def _c(self):
         return self.acc._con()
@@ -220,6 +229,138 @@ class Kids:
                 c.execute("UPDATE parent_alerts SET lat=NULL, lng=NULL WHERE child_uid=? AND kind!='sos'", (uid,))
         return True
 
+    # ------------------------------------------------------------------ the live mic/camera AGREEMENT (only the account owner's own family gets this free;
+    # every other user must agree to it themselves, in their own account, before the owner turns it on for them in the admin panel)
+    def av_agree(self, uid, ip=''):
+        with self.lock, self._c() as c:
+            c.execute('INSERT INTO kid_av_agree(uid,at,ip,ver) VALUES(?,?,?,?) ON CONFLICT(uid) DO UPDATE SET at=excluded.at, ip=excluded.ip, ver=excluded.ver',
+                      (uid, int(time.time() * 1000), _clip(ip, 64), AV_AGREE_TEXT_VERSION))
+        return True
+
+    def av_agreed(self, uid):
+        with self._c() as c:
+            r = c.execute('SELECT at, ver FROM kid_av_agree WHERE uid=?', (uid,)).fetchone()
+        return bool(r and r['ver'] == AV_AGREE_TEXT_VERSION)
+
+    def av_agreement(self, uid):
+        with self._c() as c:
+            r = c.execute('SELECT at, ver FROM kid_av_agree WHERE uid=?', (uid,)).fetchone()
+        return dict(r) if r else None
+
+    # ------------------------------------------------------------------ live mic / camera (only while the CHILD's own toggle is on; never recorded)
+    def _av_purge(self, uid, kind, now):
+        """drop a parent's claim once they stop polling (AV_STALE_MS) or after AV_MAX_MS (must re-open -> a fresh notice to the child). Caller holds _av_lock."""
+        key = (uid, kind)
+        sess = self._av.get(key)
+        if not sess:
+            return None
+        for pid in [p for p, v in sess['parents'].items() if now - v['last'] > AV_STALE_MS or now - v['started'] > AV_MAX_MS]:
+            sess['parents'].pop(pid, None)
+        if not sess['parents']:
+            self._av.pop(key, None)
+            return None
+        return sess
+
+    def av_set(self, uid, mic=None, cam=None):
+        """the CHILD's own switch (no PIN: this is the child's decision, not the parent's). Turning a kind off ends any live session for it at once."""
+        if not self.profile(uid):
+            return None
+        cfg = self.config(uid)
+        av = dict(cfg.get('av') or {'mic': False, 'cam': False})
+        if mic is not None:
+            av['mic'] = bool(mic)
+        if cam is not None:
+            av['cam'] = bool(cam)
+        cfg['av'] = av
+        with self.lock, self._c() as c:
+            c.execute('INSERT INTO kid_config(uid,json,updated) VALUES(?,?,?) ON CONFLICT(uid) DO UPDATE SET json=excluded.json, updated=excluded.updated', (uid, json.dumps(cfg), int(time.time() * 1000)))
+        with self._av_lock:
+            for kind in AV_KINDS:
+                if not av.get(kind):
+                    self._av.pop((uid, kind), None)
+        return av
+
+    def av_status(self, uid):
+        """for the child's own phone: which switches are on, and whether a parent is ACTUALLY watching right now (drives the on-screen notice)."""
+        cfg = self.config(uid)
+        now = int(time.time() * 1000)
+        out = {}
+        with self._av_lock:
+            for kind in AV_KINDS:
+                out[kind] = {'on': bool((cfg.get('av') or {}).get(kind)), 'live': bool(self._av_purge(uid, kind, now))}
+        return out
+
+    def av_open(self, parent, uid, kind):
+        """-> (ok, reason).  Only a linked parent, and only while the CHILD has that switch on. Logged as an event (no media is ever stored)."""
+        if kind not in AV_KINDS or not self.is_parent(parent, uid):
+            return False, 'denied'
+        if not (self.config(uid).get('av') or {}).get(kind):
+            return False, 'off'
+        now = int(time.time() * 1000)
+        with self._av_lock:
+            sess = self._av.setdefault((uid, kind), {'parents': {}, 'chunk': None, 'mime': '', 'at': 0})
+            sess['parents'][parent] = {'last': now, 'started': now}
+        with self.lock, self._c() as c:
+            c.execute('INSERT INTO kid_events(uid,at,kind,data) VALUES(?,?,?,?)', (uid, now, 'av_open', json.dumps({'kind': kind})))
+        return True, None
+
+    def av_close(self, parent, uid, kind):
+        if kind not in AV_KINDS:
+            return False
+        with self._av_lock:
+            sess = self._av.get((uid, kind))
+            if sess:
+                sess['parents'].pop(parent, None)
+                if not sess['parents']:
+                    self._av.pop((uid, kind), None)
+        with self.lock, self._c() as c:
+            c.execute('INSERT INTO kid_events(uid,at,kind,data) VALUES(?,?,?,?)', (uid, int(time.time() * 1000), 'av_close', json.dumps({'kind': kind})))
+        return True
+
+    def av_push(self, uid, kind, data_b64, mime):
+        """the child uploads the newest chunk; kept in memory only (never written to disk/DB), and only while a parent is actually watching."""
+        if kind not in AV_KINDS or not data_b64 or not isinstance(data_b64, str) or len(data_b64) > int(AV_MAX_CHUNK * 1.4):
+            return False
+        now = int(time.time() * 1000)
+        with self._av_lock:
+            sess = self._av_purge(uid, kind, now)
+            if not sess:
+                return False                                                # nobody is watching: nothing to do with it
+            try:
+                raw = base64.b64decode(data_b64, validate=True)
+            except Exception:
+                return False
+            if not raw or len(raw) > AV_MAX_CHUNK:
+                return False
+            sess['chunk'], sess['mime'], sess['at'] = data_b64, _clip(mime, 60) or 'application/octet-stream', now
+        return True
+
+    def av_pull(self, parent, uid, kind):
+        """-> dict for the parent's live view, or None (not linked, switch off, or this parent never opened it)."""
+        if kind not in AV_KINDS or not self.is_parent(parent, uid):
+            return None
+        now = int(time.time() * 1000)
+        with self._av_lock:
+            sess = self._av_purge(uid, kind, now)
+            if not sess or parent not in sess['parents']:
+                return None
+            sess['parents'][parent]['last'] = now
+            chunk, mime, at = sess['chunk'], sess['mime'], sess['at']
+        return {'live': True, 'chunk': chunk, 'mime': mime, 'at': at}
+
+    def _av_drop(self, uid):
+        """forget every live session that touches this account, as a child or as a watching parent (used on unlink / delete)."""
+        with self._av_lock:
+            for key in list(self._av.keys()):
+                if key[0] == uid:
+                    self._av.pop(key, None)
+                else:
+                    sess = self._av.get(key)
+                    if sess:
+                        sess['parents'].pop(uid, None)
+                        if not sess['parents']:
+                            self._av.pop(key, None)
+
     # ------------------------------------------------------------------ progress events (for the parent's report)
     def add_events(self, uid, events):
         n, now = 0, int(time.time() * 1000)
@@ -276,6 +417,39 @@ class Kids:
             c.execute('DELETE FROM family_links WHERE child_uid=? AND parent_uid=?', (child, parent))
             c.execute('DELETE FROM parent_alerts WHERE child_uid=? AND parent_uid=?', (child, parent))     # an ex-parent keeps no locations
             c.execute('DELETE FROM kid_msgs WHERE child_uid=? AND parent_uid=?', (child, parent))
+        with self._av_lock:
+            for kind in AV_KINDS:                                           # an ex-parent instantly loses any live mic/camera session too
+                sess = self._av.get((child, kind))
+                if sess:
+                    sess['parents'].pop(parent, None)
+                    if not sess['parents']:
+                        self._av.pop((child, kind), None)
+
+    # ------------------------------------------------------------------ the PARENT's own invite code (so a brand-new child device never needs a
+    # server token: it enters this code, which both creates its own account AND links it to this parent, in one step -- see server.kids_join)
+    def parent_code(self, parent):
+        with self.lock, self._c() as c:
+            c.execute('DELETE FROM parent_codes WHERE exp<? OR parent_uid=?', (int(time.time() * 1000), parent))
+            while True:
+                code = ''.join(secrets.choice('0123456789') for _ in range(6))
+                if not c.execute('SELECT 1 FROM parent_codes WHERE code=?', (code,)).fetchone():
+                    break
+            c.execute('INSERT INTO parent_codes(code,parent_uid,exp) VALUES(?,?,?)', (code, parent, int(time.time() * 1000) + 30 * 60000))
+        return code
+
+    def parent_code_peek(self, code):
+        """-> parent_uid, or None for a bad/expired code. Read-only; brute-force limiting is the caller's job (server.py has the IP)."""
+        with self._c() as c:
+            r = c.execute('SELECT parent_uid, exp FROM parent_codes WHERE code=?', (str(code or '').strip(),)).fetchone()
+        return r['parent_uid'] if r and r['exp'] >= time.time() * 1000 else None
+
+    def parent_code_link(self, code, child):
+        parent = self.parent_code_peek(code)
+        if parent is None or parent == child:
+            return None
+        with self.lock, self._c() as c:
+            c.execute('INSERT OR REPLACE INTO family_links(child_uid,parent_uid,since) VALUES(?,?,?)', (child, parent, int(time.time() * 1000)))
+        return parent
 
     def children_of(self, parent):
         with self._c() as c:
@@ -530,6 +704,7 @@ class Kids:
         return {'profile': self.profile(child), 'config': self.config(child), 'events': ev, 'locations': lc}
 
     def delete_data(self, child, keep_profile=False):
+        self._av_drop(child)                                                # kill any live mic/camera session first -- the most sensitive thing to forget
         with self.lock, self._c() as c:
             for t in ('kid_events', 'locs', 'kid_state', 'kid_flags'):
                 c.execute('DELETE FROM %s WHERE uid=?' % t, (child,))
@@ -584,3 +759,4 @@ class Kids:
             c.execute('DELETE FROM parent_alerts WHERE at<?', (now - 30 * DAY,))
             c.execute('DELETE FROM kid_flags WHERE at<? AND key LIKE "school_%"', (now - 3 * DAY,))
             c.execute('DELETE FROM family_codes WHERE exp<?', (now,))
+            c.execute('DELETE FROM parent_codes WHERE exp<?', (now,))

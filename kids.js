@@ -218,11 +218,12 @@
     mountScene(); mountSos(); mountBadge();
     syncTasks(); timers.forEach(clearInterval);
     timers = [setInterval(minuteTick, 30000), setInterval(syncTasks, 600000), setInterval(pullMe, 60000), setInterval(flush, 60000)];
-    setTimeout(() => { pullMe(); flush(); minuteTick(); locApply(); }, 1200);
+    setTimeout(() => { pullMe(); flush(); minuteTick(); locApply(); avLoadStatus(); }, 1200);
     if (!k.ready) setTimeout(onboard, 400);
   }
   function leave() {
     timers.forEach(clearInterval); timers = []; const s = el('kSos'); if (s) s.remove(); const sc = el('kScene'); if (sc) sc.remove(); const b = el('kBadge'); if (b) b.remove(); const l = el('kLock'); if (l) l.remove();
+    const avb = el('kAvBanner'); if (avb) avb.remove(); avStopAll();
     purgeTasks(); try { locStop(); } catch (e) { }
   }
   function mountScene() {
@@ -308,6 +309,84 @@
     k.consent = !!on; k.consentAt = on ? Date.now() : 0; save(); locApply(); refreshSafety(); return { ok: true, offline: r.status === 0 };
   }
   function refreshSafety() { const b = el('kBadge'); if (b) b.hidden = !(isKid() && K().consent); }
+
+  /* ---------------- live mic/camera: OFF by default; the CHILD turns it on, nobody else. A parent can only ever watch while it is on, and the
+     instant anyone is actually watching, this screen shows a big, impossible-to-miss red notice with a one-tap stop. Nothing is ever recorded. */
+  const AV = { feature: false, agreed: false, on: { mic: false, cam: false }, mic: false, cam: false, pollT: null, micRec: null, micStream: null, camStream: null, camVideo: null, camT: null };
+  async function avLoadStatus() {
+    if (!isKid() || !K().ready) return;
+    const a = await api('/api/kids/av/agreement');
+    if (a.ok) { AV.feature = !!a.j.avFeature; AV.agreed = !!a.j.agreed; }
+    if (!AV.feature) { avStopAll(); return; }
+    const r = await api('/api/kids/av');
+    if (r.ok) {
+      AV.on = { mic: !!r.j.mic.on, cam: !!r.j.cam.on };
+      ['mic', 'cam'].forEach(kind => { const live = !!r.j[kind].live; if (live && !AV[kind]) avStart(kind); else if (!live && AV[kind]) avStop(kind); });
+    }
+    avSchedulePoll();
+  }
+  function avSchedulePoll() {
+    clearTimeout(AV.pollT);
+    if (isKid() && AV.feature && (AV.on.mic || AV.on.cam) && !document.hidden) AV.pollT = setTimeout(avLoadStatus, 3000);
+  }
+  function avBlobToB64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onloadend = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(blob); }); }
+  async function avStart(kind) {
+    if (AV[kind] || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    try {
+      if (kind === 'mic') {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); AV.micStream = stream;
+        const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+        const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); AV.micRec = rec;
+        rec.ondataavailable = async ev => { if (ev.data && ev.data.size && AV.mic) api('/api/kids/av/push', { kind: 'mic', data: await avBlobToB64(ev.data), mime: rec.mimeType || 'audio/webm' }); };
+        rec.start(1200);
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 160 }, height: { ideal: 120 } } }); AV.camStream = stream;
+        const v = document.createElement('video'); v.srcObject = stream; v.muted = true; v.playsInline = true; try { await v.play(); } catch (e) { } AV.camVideo = v;
+        const c = document.createElement('canvas'); c.width = 160; c.height = 120; const cx = c.getContext('2d');
+        AV.camT = setInterval(() => { if (!AV.cam || !v.videoWidth) return; cx.drawImage(v, 0, 0, c.width, c.height); api('/api/kids/av/push', { kind: 'cam', data: c.toDataURL('image/jpeg', 0.45).split(',')[1], mime: 'image/jpeg' }); }, 1000);
+      }
+      AV[kind] = true; avBannerUpdate();
+    } catch (e) { /* permission denied or no camera/mic: stay off, no crash */ }
+  }
+  function avStop(kind) {
+    if (!AV[kind]) return; AV[kind] = false;
+    if (kind === 'mic') { try { AV.micRec && AV.micRec.state !== 'inactive' && AV.micRec.stop(); } catch (e) { } try { AV.micStream && AV.micStream.getTracks().forEach(t => t.stop()); } catch (e) { } AV.micRec = AV.micStream = null; }
+    else { clearInterval(AV.camT); try { AV.camStream && AV.camStream.getTracks().forEach(t => t.stop()); } catch (e) { } AV.camT = AV.camVideo = AV.camStream = null; }
+    avBannerUpdate();
+  }
+  function avStopAll() { avStop('mic'); avStop('cam'); clearTimeout(AV.pollT); }
+  function avBannerUpdate() {
+    let b = el('kAvBanner');
+    if (!AV.mic && !AV.cam) { if (b) b.hidden = true; return; }
+    if (!b) { b = document.createElement('div'); b.id = 'kAvBanner'; b.className = 'k-avbanner'; document.body.appendChild(b); }
+    const txt = AV.mic && AV.cam ? _t('🔴 अभी मम्मी-पापा आपको देख और सुन रहे हैं') : AV.cam ? _t('🔴 अभी मम्मी-पापा आपको देख रहे हैं') : _t('🔴 अभी मम्मी-पापा आपकी आवाज़ सुन रहे हैं');
+    b.innerHTML = '<span class="k-avdot"></span><b>' + esc(txt) + '</b><button type="button" data-kact="avstopall">' + esc(_t('रोको')) + '</button>'; b.hidden = false;
+  }
+  async function avStopAllByChild() {
+    const wasMic = AV.mic, wasCam = AV.cam; avStopAll();
+    if (wasMic) await api('/api/kids/av', { mic: false });
+    if (wasCam) await api('/api/kids/av', { cam: false });
+    AV.on = { mic: false, cam: false }; toast(_t('बंद कर दिया ✅')); if (window.__ovTab === 'kav') drawAvSettings();
+  }
+  async function avSetToggle(kind, on) {
+    const body = {}; body[kind] = on; const r = await api('/api/kids/av', body);
+    if (r.ok) { AV.on[kind] = on; if (!on) avStop(kind); avSchedulePoll(); drawAvSettings(); } else toast(_t('अभी नहीं हो पाया — इंटरनेट देखिए'));
+  }
+  function openAvSettings() { drawAvSettings(); avLoadStatus().then(drawAvSettings); }
+  function drawAvSettings() {
+    if (!AV.feature) {
+      ov('<div class="k-center"><div class="k-burst">🎙️</div><h2>' + esc(_t('मम्मी-पापा को ज़रूरत पड़ने पर सुनने/देखने दें')) + '</h2>' +
+        '<p class="k-sub">' + esc(_t('यह बिल्कुल आपकी अपनी मर्ज़ी है, कोई मजबूरी नहीं। चालू करने पर आप मम्मी-पापा को, सिर्फ़ ज़रूरत के वक़्त, अपनी आवाज़ या तस्वीर दिखा सकते हैं। जब भी वे सुन/देख रहे हों, आपकी स्क्रीन पर हमेशा एक बड़ा लाल निशान दिखेगा, और आप कभी भी एक टैप से रोक सकते हैं। कुछ भी रिकॉर्ड नहीं होता।')) + '</p>' +
+        (AV.agreed ? '<p class="k-sub">' + esc(_t('आपने सहमति दे दी है। Piyu चलाने वाले से बात होने के बाद यह चालू होगा।')) + '</p><button class="k-btn ghost" data-kact="closeov">' + esc(_t('ठीक है')) + '</button>'
+          : '<button class="k-btn" data-kact="avagree">' + esc(_t('मैं समझता/समझती हूँ, आगे बढ़ो')) + '</button><button class="k-btn ghost" data-kact="closeov">' + esc(_t('अभी नहीं')) + '</button>') + '</div>', 'kav', 'k-ov-solid');
+      return;
+    }
+    const row = (kind, icon, label) => '<div class="k-card k-consentcard ' + (AV.on[kind] ? 'on' : '') + '"><div class="k-conrow"><div><b>' + icon + ' ' + esc(label) + '</b><small>' + (AV.on[kind] ? esc(_t('चालू — ज़रूरत पड़ने पर मम्मी-पापा सुन/देख सकते हैं')) : esc(_t('बंद — कोई नहीं सुन/देख सकता'))) + '</small></div><button class="k-switch ' + (AV.on[kind] ? 'on' : '') + '" data-kact="avtoggle" data-kind="' + kind + '" data-on="' + (AV.on[kind] ? 0 : 1) + '" aria-label="toggle"><i></i></button></div></div>';
+    ov('<div class="k-center" style="text-align:left"><h2 style="text-align:center">' + esc(_t('मम्मी-पापा को सुनने/देखने दें')) + '</h2>' +
+      '<p class="k-sub" style="text-align:center">' + esc(_t('यह फ़ैसला सिर्फ़ आपका है। चालू होने पर भी, सुनने/देखने के वक़्त हमेशा एक बड़ा लाल निशान दिखेगा।')) + '</p>' +
+      row('mic', '🎤', _t('आवाज़ (Mic)')) + row('cam', '📷', _t('कैमरा')) +
+      '<button class="k-btn ghost" data-kact="closeov" style="margin-top:10px">' + esc(_t('बंद करें')) + '</button></div>', 'kav', 'k-ov-parent');
+  }
 
   /* ---------------- server sync: profile, parent's routine, parent's messages, consent ---------------- */
   async function pullMe() {
@@ -397,7 +476,7 @@
         <div class="k-quick">${[['ok', '✅', _t('मैं ठीक हूँ')], ['home', '🏠', _t('घर पहुँच गया')], ['school', '🏫', _t('स्कूल पहुँच गया')], ['late', '⏰', _t('देर होगी')], ['pick', '🚗', _t('लेने आओ')], ['call', '📞', _t('फ़ोन करो')]].map(([key, ic, tx]) => `<button class="k-q" data-kact="checkin" data-key="${key}"><i>${ic}</i><span>${esc(tx)}</span></button>`).join('')}</div>
         <div class="k-sec"><h3>${esc(_t('आज क्या करें?'))}</h3></div>
         <div class="k-go"><button class="k-gc learn" data-kact="gotab" data-t="klearn"><i>📚</i><b>${esc(_t('सीखो'))}</b></button><button class="k-gc play" data-kact="gotab" data-t="kplay"><i>🎮</i><b>${esc(_t('खेलो'))}</b></button><button class="k-gc story" data-kact="gotab" data-t="kstory"><i>📖</i><b>${esc(_t('कहानी'))}</b></button><button class="k-gc hw" data-kact="homework"><i>📷</i><b>${esc(_t('होमवर्क फोटो'))}</b></button></div>
-        <div class="k-parentrow"><button class="k-lockbtn" data-kact="parent">🔒 ${esc(_t('पैरेंट'))}</button></div>
+        <div class="k-parentrow"><button class="k-lockbtn" data-kact="parent">🔒 ${esc(_t('पैरेंट'))}</button><button class="k-lockbtn" data-kact="avset">🎙️📷 ${esc(_t('सुरक्षा'))}</button></div>
       </div>`;
     fx.animateRings(root);
   }
@@ -450,9 +529,36 @@
   /* ---------------- sign-up: the parent sets it up (steps 1–5) ---------------- */
   let W = null;
   const CLASSES = ['Nursery', 'LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8'];
-  function openSignup(edit) {
-    const k = K(); W = { step: edit ? 1 : 0, edit: !!edit, name: k.name || '', age: k.ready ? (k.age || 6) : 6, cls: k.cls || '', avatar: k.avatar || '🦁', pm: k.pmobile || '', pin: '', pin2: '', loc: false, msg: '' };
-    drawWiz();
+  async function openSignup(edit) {
+    const k = K(); W = { step: edit ? 1 : 0, edit: !!edit, name: k.name || '', age: k.ready ? (k.age || 6) : 6, cls: k.cls || '', avatar: k.avatar || '🦁', pm: k.pmobile || '', pin: '', pin2: '', loc: false, msg: '', joinCode: '' };
+    if (edit || S.settings.token) { drawWiz(); return; }      // already has its own identity: the normal path
+    ov('<div class="k-center"><div class="k-spin">⏳</div></div>', 'kjoingate', 'k-ov-solid');
+    const probe = await api('/api/me');
+    if (!W || W.step == null) return;                          // the overlay was closed while we were checking
+    if (probe.ok) { drawWiz(); return; }                        // server is open, or this device already has a working session some other way
+    drawJoinGate();
+  }
+  function drawJoinGate() {
+    ov('<div class="k-center"><div class="k-burst">🔑</div><h1>' + esc(_t('मम्मी-पापा का कोड')) + '</h1>' +
+      '<p class="k-sub">' + esc(_t('अपने मम्मी-पापा से 6 अंकों का कोड लीजिए — उनके फ़ोन में Piyu खोलकर "👪 फ़ैमिली" में "बच्चे को जोड़ें" दबाने पर मिलेगा — और यहाँ डालिए।')) + '</p>' +
+      '<input id="jcIn" class="k-in k-pinin" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">' +
+      '<div class="k-msg" id="jcMsg"></div><button class="k-btn" data-kact="jcnext">' + esc(_t('आगे चलो ➜')) + '</button></div>', 'kjoingate', 'k-ov-wiz');
+    setTimeout(() => { const i = el('jcIn'); if (i) i.focus(); }, 150);
+  }
+  async function jcNext() {
+    const i = el('jcIn'), msg = el('jcMsg'); if (!i) return;
+    const code = (i.value || '').replace(/\D/g, '').slice(0, 6);
+    if (code.length !== 6) { msg.textContent = _t('6 अंकों का कोड डालिए'); return; }
+    msg.textContent = _t('जाँच रहे हैं…');
+    const r = await api('/api/kids/code/check?code=' + code);
+    if (!r.ok || !r.j.ok) { msg.textContent = r.status === 429 ? _t('बहुत कोशिशें — थोड़ी देर बाद') : _t('कोड सही नहीं है — मम्मी-पापा से दोबारा पूछिए'); return; }
+    W.joinCode = code; W.step = 0; drawWiz();
+  }
+  async function joinWithCode(w) {
+    const r = await api('/api/kids/join', { code: w.joinCode, device: DEVICE, name: w.name, age: w.age, cls: w.cls, avatar: w.avatar, newPin: w.pin });
+    if (!r.ok || !r.j.token) { toast(_t('जुड़ नहीं पाया — दोबारा कोशिश कीजिए')); return false; }
+    S.settings.token = r.j.token; save(); const k = K(); k.srv = true; if (r.j.config) k.cfg = r.j.config; save();
+    return true;
   }
   const STEPS = 5;
   function drawWiz() {
@@ -508,7 +614,7 @@
     k.ready = true; S.settings.mode = 'kids'; S.settings.sname = ''; k.routineEdited = true; if (!k.created) k.created = Date.now(); save();
     closeOv(); if (!wasKid || !w.edit) { if (window.PiyuStudent) PiyuStudent.applyMode(); } else renderAll();
     FX().confetti(160); sfx('win'); renderAll(); syncTasks();
-    pushProfile().then(async () => { if (w.loc) { const r = await setConsent(true, w.pin || pinFresh()); if (!r.ok) toast(r.why === 'perm' ? _t('लोकेशन की अनुमति नहीं मिली — पैरेंट पैनल से फिर कोशिश करें') : _t('अभी लोकेशन चालू नहीं हो पाई')); } if (k.routineEdited) pushConfig(); });
+    (w.joinCode ? joinWithCode(w) : pushProfile().then(() => true)).then(async ok => { if (ok && w.loc) { const r = await setConsent(true, w.pin || pinFresh()); if (!r.ok) toast(r.why === 'perm' ? _t('लोकेशन की अनुमति नहीं मिली — पैरेंट पैनल से फिर कोशिश करें') : _t('अभी लोकेशन चालू नहीं हो पाई')); } if (ok && k.routineEdited) pushConfig(); });
     kSay(_t2('नमस्ते {0}! मैं पियू हूँ। मैं रोज़ आपको काम याद दिलाऊँगी, सिखाऊँगी और कहानी सुनाऊँगी। चलो शुरू करें!', [k.name], 'Hello {0}! I am Piyu. I will remind you of your tasks, teach you and tell you stories. Let us begin!', [k.name]), 'cheerful');
     goTab('khome');
   }
@@ -538,7 +644,7 @@
       return;
     }
     const b = e.target.closest('[data-kact]'); if (!b) return;
-    if (!b.closest('#kHome,#kStars,#kLearn,#kPlay,#kStory,#kOv,#kLock,#kSos')) return;
+    if (!b.closest('#kHome,#kStars,#kLearn,#kPlay,#kStory,#kOv,#kLock,#kSos,#kAvBanner')) return;
     const a = b.dataset.kact;
     switch (a) {
       case 'closeov': closeOv(); renderAll(); break;
@@ -556,6 +662,11 @@
       case 'sosno': clearInterval(window.__kSosT); closeOv(); break;
       case 'unlock': unlockFlow(); break;
       case 'unlockfor': { const k = K(), m = +b.dataset.m, key = dkey(Date.now()); k.extraMin = k.extraMin || {}; k.extraMin[key] = (k.extraMin[key] || 0) + m; if (lockReason() === 'bed') k.unlockUntil = Date.now() + m * 60000; save(); closeOv(); const l = el('kLock'); if (l) l.remove(); checkLock(); renderHome(); break; }
+      case 'avset': openAvSettings(); break;
+      case 'avagree': api('/api/kids/av/agree', {}).then(() => { AV.agreed = true; toast(_t('भेज दिया ✅')); drawAvSettings(); }); break;
+      case 'avtoggle': avSetToggle(b.dataset.kind, b.dataset.on === '1'); break;
+      case 'avstopall': avStopAllByChild(); break;
+      case 'jcnext': jcNext(); break;
     }
   });
   /* sparkle where a child taps */
@@ -565,7 +676,10 @@
     const s = document.createElement('i'); s.className = 'k-spark'; s.textContent = ['✨', '⭐', '💫'][Math.floor(Math.random() * 3)]; s.style.left = e.clientX + 'px'; s.style.top = e.clientY + 'px'; document.body.appendChild(s); setTimeout(() => s.remove(), 700);
   }, { passive: true });
   /* big-number overlay buttons: "parent" in the bar of splash */
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { tickLast = Date.now(); if (isKid()) { checkLock(); pullMe(); } } });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { tickLast = Date.now(); if (isKid()) { checkLock(); pullMe(); avLoadStatus(); } }
+    else if (isKid()) { avStop('mic'); avStop('cam'); }                   // mic/camera only ever run while this screen is open and visible, never in the background
+  });
 
   const api2 = { K, D, ov, closeOv, kSay, sfx, addStars, ev, flush, api, nm, clang, level, lvInfo, balance, streak, dayRec, dkey, hm, toMin, askPin, pinFresh, verifyPin, localHash, setConsent, getPos, locApply, locStop, pullMe, pushConfig, pushProfile, syncTasks, todayList, onDone, renderHome, renderStars, renderAll, enter, leave, navItems, onTab, onboard, openSignup, checkLock, avatarHtml, refreshBars, checkBadges, isKid, TABS, DEF_ROUTINE, sched, lockReason, setup };
   window.PiyuKids = Object.assign(window.PiyuKids || {}, api2);
