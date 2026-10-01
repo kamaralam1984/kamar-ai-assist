@@ -113,6 +113,7 @@ dialog h3{margin-bottom:6px}
 .confetti{position:fixed;inset:0;z-index:95;pointer-events:none}
 @media (max-width:560px){.users{grid-template-columns:1fr}.g2{grid-template-columns:1fr}.dr{padding:12px 12px 60px}}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important}}
+.alangs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:6px 0 14px}.alangs button{border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--tx);padding:5px 12px;border-radius:99px;cursor:pointer;font-size:13px}.alangs button.on{background:linear-gradient(135deg,#1d4ed8,#22d3ee);border-color:transparent;font-weight:700}.alangSel{width:auto;padding:7px 10px;border-radius:12px;font-size:13px}
 </style>
 </head>
 <body>
@@ -122,6 +123,7 @@ dialog h3{margin-bottom:6px}
   <div class="lbox">
     <div class="orb"><div class="radar"><span class="rg"></span><span class="rg g"></span><span class="rg"></span><span class="sweep"></span><span class="blip b1"></span><span class="blip b2"></span><span class="blip b3"></span></div><i></i><i></i><i></i></div>
     <h1>Piyu Admin</h1>
+    <div class="alangs" data-keep></div>
     <div class="lmode"><button type="button" class="on" data-m="mail">✉ Email + Password</button><button type="button" data-m="pin">🔑 Owner PIN / token</button></div>
     <div id="lMail"><input id="lemail" type="email" autocomplete="username" placeholder="Email" spellcheck="false"><input id="lpass" type="password" autocomplete="current-password" placeholder="Password" style="margin-top:10px"></div>
     <div id="lPin" hidden><input id="tok" type="password" autocomplete="off" placeholder="Owner PIN / token" spellcheck="false"></div>
@@ -134,6 +136,7 @@ dialog h3{margin-bottom:6px}
   <header class="lines">
     <div class="logo"><i></i><i></i></div>
     <h1>Piyu Admin<small id="sub">—</small></h1>
+    <select id="alang" class="alangSel" title="Language" aria-label="Language" data-keep></select>
     <div class="live" id="liveb"><i></i><span id="liven">0</span> online</div>
     <button class="x" id="out" title="Logout">⎋</button>
   </header>
@@ -172,6 +175,7 @@ dialog h3{margin-bottom:6px}
   <div class="acts" style="justify-content:flex-end"><button class="btn ghost" id="pwCancel" type="button">रद्द करें</button><button class="btn gold" id="pwSave" type="button">बदलें</button></div>
 </dialog>
 
+<script src="i18n/admin.js"></script>
 <script>
 'use strict';
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -181,6 +185,57 @@ const FEATS = { voice: ['🔊', 'Voice / आवाज़'], ai: ['🤖', 'AI ज
 const TABN = { shome: 'Study home', courses: 'Courses', quiz: 'Quiz', cards: 'Flashcards', plan: 'Plan', chat: 'Chat / Teacher', home: 'Home', tasks: 'काम', docs: 'Docs', prog: 'Progress', set: 'Settings', app: 'App' };
 let tab = 'dash', ST = { ov: null, users: [], cur: null };
 
+/* ---------------- language of the panel (Hindi is the source; en / bn / mr / ur from i18n/admin.js) ---------------- */
+const ALANGS = [['hi', 'हिन्दी'], ['en', 'English'], ['bn', 'বাংলা'], ['mr', 'मराठी'], ['ur', 'اردو']];
+let ALANG = 'hi'; try { ALANG = localStorage.getItem('piyu.alang') || 'hi'; } catch (e) { }
+if (!ALANGS.some(x => x[0] === ALANG)) ALANG = 'hi';
+const DEVRX = /[\u0900-\u097F]/, RULES = {};
+function rulesFor(l) {
+  if (RULES[l]) return RULES[l];
+  const d = (window.ADMIN_I18N || {})[l] || {};
+  return RULES[l] = Object.keys(d).sort((a, b) => b.length - a.length).map(k => {
+    let n = 0; const src = k.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{(\d+)\}/g, () => { n++; return '(\\{\\d+\\})'; });
+    const a = DEVRX.test(k[0]) ? '(?<![\\u0900-\\u097F])' : '', z = DEVRX.test(k[k.length - 1]) ? '(?![\\u0900-\\u097F])' : '';
+    return [new RegExp(a + src + z, 'g'), d[k], n];
+  });
+}
+/* translate one string: numbers are lifted out, every phrase is replaced once (longest first), numbers are put back */
+function T(s) {
+  if (ALANG === 'hi' || typeof s !== 'string' || !DEVRX.test(s)) return s;
+  const nums = []; let t = s.replace(/\d+(?:[.,]\d+)?/g, m => { nums.push(m); return '{' + (nums.length - 1) + '}'; }); const outs = [];
+  for (const [rx, tr] of rulesFor(ALANG)) t = t.replace(rx, (...m) => { const caps = m.slice(1, 1 + 20).filter(x => typeof x === 'string' && /^\{\d+\}$/.test(x)); outs.push(tr.replace(/\{(\d+)\}/g, (x, i) => caps[i] !== undefined ? caps[i] : x)); return '\uE000' + (outs.length - 1) + '\uE001'; });
+  t = t.replace(/\uE000(\d+)\uE001/g, (x, i) => outs[i]);
+  return t.replace(/\{(\d+)\}/g, (x, i) => nums[i] !== undefined ? nums[i] : x);
+}
+const ORIG = new WeakMap(), ATTR = ['placeholder', 'title'];
+let busy = false;
+function trNode(root) {
+  if (busy) return; busy = true;
+  try {
+    const w = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+    for (let n; (n = w.nextNode());) {
+      const p = n.parentNode; if (!p || /^(SCRIPT|STYLE)$/.test(p.nodeName) || (p.closest && p.closest('[data-keep]'))) continue;
+      const known = ORIG.get(n); const o = known && n.data === known.out ? known.src : n.data;
+      if (!known && !DEVRX.test(n.data)) continue;
+      const out = T(o); if (out !== n.data) n.data = out; ORIG.set(n, { src: o, out });
+    }
+    (root && root.querySelectorAll ? root : document).querySelectorAll('[placeholder],[title]').forEach(e => ATTR.forEach(k => {
+      const v = e.getAttribute(k); if (v == null) return; const key = 'o' + k, o = e.dataset[key] !== undefined && e.dataset['t' + k] === v ? e.dataset[key] : v;
+      if (!DEVRX.test(o) && e.dataset[key] === undefined) return; e.dataset[key] = o; const out = T(o); e.dataset['t' + k] = out; if (out !== v) e.setAttribute(k, out);
+    }));
+  } finally { busy = false; }
+}
+const mo = new MutationObserver(ms => { if (busy) return; ms.forEach(m => { if (m.type === 'childList') m.addedNodes.forEach(n => { if (n.nodeType === 1) trNode(n); else if (n.nodeType === 3 && n.parentNode) trNode(n.parentNode); }); else if (m.type === 'characterData' && m.target.parentNode) trNode(m.target.parentNode); }); });
+function setALang(l) {
+  ALANG = l; try { localStorage.setItem('piyu.alang', l); } catch (e) { }
+  document.documentElement.lang = l; document.documentElement.dir = l === 'ur' ? 'rtl' : 'ltr';
+  $$('.alangs').forEach(b => { b.innerHTML = ALANGS.map(([k, n]) => `<button type="button" data-l="${k}" class="${k === l ? 'on' : ''}">${n}</button>`).join(''); });
+  const sel = $('#alang'); if (sel) { sel.innerHTML = ALANGS.map(([k, n]) => `<option value="${k}" ${k === l ? 'selected' : ''}>${n}</option>`).join(''); }
+  trNode(document.body); document.title = 'Piyu Admin';
+}
+document.addEventListener('click', e => { const b = e.target.closest('.alangs [data-l]'); if (b) setALang(b.dataset.l); });
+document.addEventListener('change', e => { if (e.target.id === 'alang') setALang(e.target.value); });
+
 async function api(path, opt) {
   const o = Object.assign({ headers: {} }, opt || {}); o.headers = Object.assign(SESS ? { 'X-Piyu-Admin': SESS } : { 'X-Piyu-Token': TOKEN }, o.headers);
   if (o.json !== undefined) { o.body = JSON.stringify(o.json); o.headers['Content-Type'] = 'application/json'; o.method = o.method || 'POST'; delete o.json; }
@@ -189,7 +244,7 @@ async function api(path, opt) {
   if (r.status === 401 || (r.status === 403 && path.indexOf('/admin') > 0)) { const e = new Error('auth'); e.status = r.status; throw e; }
   return raw ? r : r.json();
 }
-function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = T(m); document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 const fmtDur = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? h + 'h ' + m + 'm' : m ? m + 'm' : s + 's'; };
 const ago = ts => { if (!ts) return '—'; const d = (Date.now() - ts) / 1000; return d < 60 ? 'अभी' : d < 3600 ? Math.floor(d / 60) + ' min पहले' : d < 86400 ? Math.floor(d / 3600) + ' घंटे पहले' : Math.floor(d / 86400) + ' दिन पहले'; };
 const when = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -348,9 +403,9 @@ async function openUser(id, quiet) {
     if (a === 'pass') { openPw(u); return; }
     if (a === 'note') { await api('/api/admin/users/' + id + '/note', { json: { note: $('#note').value } }); toast('💾 सहेजा'); return; }
     if (a === 'export') { const r = await api('/api/admin/users/' + id + '/export', { raw: true }); const bl = await r.blob(); const l = document.createElement('a'); l.href = URL.createObjectURL(bl); l.download = 'piyu-user-' + id + '.json'; l.click(); return; }
-    if (a === 'delete' && !confirm(u.name + ' का सारा data हमेशा के लिए हटाएँ?')) return;
-    if (a === 'revoke' && !confirm(u.name + ' को बंद करें?')) return;
-    if ((a === 'regen' || a === 'reset') && !confirm(a === 'regen' ? 'नया token बनेगा; पुराना तुरंत बंद।' : 'Device binding हटाएँ?')) return;
+    if (a === 'delete' && !confirm(u.name + ' ' + T('का सारा data हमेशा के लिए हटाएँ?'))) return;
+    if (a === 'revoke' && !confirm(u.name + ' ' + T('को बंद करें?'))) return;
+    if ((a === 'regen' || a === 'reset') && !confirm(T(a === 'regen' ? 'नया token बनेगा; पुराना तुरंत बंद।' : 'Device binding हटाएँ?'))) return;
     await api('/api/admin/users/' + id + '/' + a, { json: {} });
     if (a === 'delete') { $('#drawer').hidden = true; ST.cur = null; toast('🗑 हटा दिया'); } else if (a === 'approve') { toast('✅ Approved — अब token भेजिए'); confetti(); } else toast('✅ हो गया');
     await refresh(); if (a !== 'delete') openUser(id, true);
@@ -382,6 +437,7 @@ function rSet() {
   $('#bk').onclick = async () => { const r = await api('/api/admin/backup', { raw: true }); const bl = await r.blob(); const l = document.createElement('a'); l.href = URL.createObjectURL(bl); l.download = 'piyu-backup-' + new Date().toISOString().slice(0, 10) + '.zip'; l.click(); toast('⬇ Backup बन गया'); };
 }
 mountFX();
+setALang(ALANG); mo.observe(document.body, { childList: true, subtree: true, characterData: true });
 if (SESS || TOKEN) login(true);
 </script>
 </body>

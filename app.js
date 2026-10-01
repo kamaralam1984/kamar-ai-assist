@@ -18,8 +18,9 @@ const storeReady = Store.load().then(st => {
   S.docs = S.docs || []; S.tasks = S.tasks || []; S.tombstones = S.tombstones || []; S.settingsAt = S.settingsAt || 0;
   S.facts = S.facts || []; S.episodes = S.episodes || []; S.days = S.days || []; S.kb = S.kb || []; S.courses = S.courses || []; S.cards = S.cards || []; S.attempts = S.attempts || []; S.sdays = S.sdays || []; if (!S.mind) S.mind = PiyuMind.newMind();
   S.settings = Object.assign({}, DEF.settings, S.settings);
+  try { detectLang(); } catch (e) { }
   snapshot();
-}).catch(() => { snapshot(); }).then(() => PiyuI18n.setLang(S.settings.lang)).then(() => { try { loginUI(); if (window.PiyuStudent) PiyuStudent.loginUI(); } catch (e) { } });
+}).catch(() => { snapshot(); }).then(() => PiyuI18n.setLang(S.settings.lang)).then(() => { try { langChips(); PiyuI18n.applyDom(); loginUI(); if (window.PiyuStudent) PiyuStudent.loginUI(); } catch (e) { } });
 
 /* change tracking: every task/doc gets an updatedAt stamp when it changes, deletions become tombstones (needed for sync) */
 const skipStamp = (k, v) => k === 'updatedAt' ? undefined : v;
@@ -379,7 +380,8 @@ async function detectNeural() {
   try {
     const st = await (await fetchU('/tts-status')).json();
     neural = !!(st.piper && st.hi && st.en);
-    if (neural && st.auth) { const r = await fetchU('/tts?lang=en&text=ok', { headers: hdrs() }); neural = r.ok; if (!r.ok) setTimeout(() => { const b = $('#voiceDiag'); if (b) b.textContent = '🔇 ' + _t('आवाज़ बंद: Sync token चाहिए'); }, 500); if (!r.ok) toast(_t("Piyu की आवाज़ के लिए Settings में Sync token डालें")); }
+    ttsWhy = '';
+    if (neural && st.auth) { const r = await fetchU('/tts?lang=en&text=ok', { headers: hdrs() }); neural = r.ok; if (!r.ok) ttsWhy = r.status === 403 ? 'feature' : 'token'; if (!r.ok) setTimeout(() => { const b = $('#voiceDiag'); if (b) b.textContent = '🔇 ' + _t('आवाज़ बंद: Sync token चाहिए'); }, 500); if (!r.ok) toast(_t("Piyu की आवाज़ के लिए Settings में Sync token डालें")); }
   } catch (e) { neural = false; }
   fillVoiceSelects();
 }
@@ -517,6 +519,20 @@ function audio() {
 ['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => { try { if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { } }, { passive: true, capture: true }));
 
 /* "🔊 आवाज़ की जाँच": tells the exact reason when Piyu is silent (server, token, audio, volume) and plays a sample */
+let ttsWhy = '';                                   // why Piyu's own server voice is not available: 'token' | 'feature' | ''
+/* the "listen" buttons: always show what is happening (which voice, speaking, done, or WHY nothing can be heard) */
+async function tryVoice(kind) {
+  const d = $('#voiceDiag'), text = kind === 'hi' ? _t(SAMPLE.hi) : kind === 'hg' ? SAMPLE.hg : SAMPLE.en, lang = kind === 'en' ? 'en' : speechLang();
+  if (voiceBlocked) { d.textContent = '🔇 ' + _t('Admin ने आवाज़ बंद की है'); toast(d.textContent); return; }
+  if (!neural && ttsWhy === '') { try { await detectNeural(); } catch (e) { } }
+  const engine = usePhone(lang) ? _t('Phone की आवाज़') : neural ? _t('Piyu की अपनी आवाज़ (Piper)') : (synth && (pick(lang) || pick('en'))) ? _t('Browser की आवाज़') : '';
+  if (!engine) {
+    d.textContent = '⚠ ' + (ttsWhy === 'token' ? _t('आवाज़ के लिए Sync token चाहिए (Settings → Sync token)') : ttsWhy === 'feature' ? _t('Admin ने आवाज़ बंद की है') : _t('इस device पर कोई आवाज़ नहीं मिली'));
+    toast(d.textContent); return;
+  }
+  d.innerHTML = '<span class="eq"><i></i><i></i><i></i><i></i></span> ' + esc(_t('बोल रही हूँ…')) + ' · ' + esc(engine); say(text, { interrupt: true });
+  await waitSpeech(30000); if (!isSpeaking()) d.textContent = '✔ ' + _t('हो गया') + ' · ' + engine;
+}
 async function voiceDiag() {
   const box = $('#voiceDiag'); const say_ = m => { box.textContent = m; };
   say_('⏳ ' + _t('जाँच रही हूँ…'));
@@ -1946,7 +1962,7 @@ function bindVoiceLib() {
   $('#setPitchSt').onchange = () => { save(); say(_t(SAMPLE.hi)); };
   $('#setHinglish').onchange = e => { s.hinglish = e.target.checked; save(); };
   $('#voiceCheck').onclick = voiceDiag;
-  $('#tryHi').onclick = () => say(_t(SAMPLE.hi)); $('#tryHg').onclick = () => say(SAMPLE.hg); $('#tryEn').onclick = () => say(SAMPLE.en);
+  $('#tryHi').onclick = () => tryVoice('hi'); $('#tryHg').onclick = () => tryVoice('hg'); $('#tryEn').onclick = () => tryVoice('en');
 }
 const SAMPLE = { hi: 'नमस्ते, मैं पीयू हूँ। मैं आपको हर काम याद दिलाऊँगी। आज आपके तीन काम हैं।', hg: 'abhi kya karna hai? Razorpay webhook add karo aur payment test karo, phir mujhe batana.', en: 'Hello, I am Piyu. You have three tasks today, and I will remind you before each one.' };
 
@@ -1957,11 +1973,7 @@ function bindSettings() {
   out();
   $('#setCompress').checked = s.compress !== false; $('#setCompress').onchange = e => { s.compress = e.target.checked; save(); };
   $('#setMic').value = s.micLang || ''; $('#setMic').onchange = e => { s.micLang = e.target.value; save(); };
-  $('#setLang').onchange = async e => {
-    s.lang = e.target.value;
-    if (/^(eng|hin|ben|mar|urd)/.test(s.ocrLang || 'eng+hin')) { s.ocrLang = { bn: 'ben+eng', mr: 'mar+eng+hin', ur: 'urd+eng' }[s.lang] || 'eng+hin'; $('#setOcr').value = s.ocrLang; }   // photo-to-text reads the script of the chosen language
-    save(); await PiyuI18n.setLang(s.lang); relang();
-  };
+  $('#setLang').onchange = e => changeLang(e.target.value);
   $('#setVoiceHi').onchange = e => { s.voiceHi = e.target.value; save(); fillVoiceSelects(); };
   $('#setVoiceEn').onchange = e => { s.voiceEn = e.target.value; save(); fillVoiceSelects(); };
   $('#setRate').oninput = e => { s.rate = +e.target.value; out(); save(); };
@@ -2059,6 +2071,21 @@ function bindSettings() {
 }
 
 /* the UI language changed: redraw everything that was built from strings */
+/* the language of the whole app: chosen on the start screen, from the 🌐 button, or in Settings; also picked from the phone's language on a brand-new install */
+const LANG_LIST = [['hi', 'हिन्दी'], ['en', 'English'], ['bn', 'বাংলা'], ['mr', 'मराठी'], ['ur', 'اردو']];
+async function changeLang(l) {
+  const s = S.settings; if (!LANG_LIST.some(x => x[0] === l)) return; s.lang = l; s.langSet = true;
+  if (/^(eng|hin|ben|mar|urd)/.test(s.ocrLang || 'eng+hin')) { s.ocrLang = { bn: 'ben+eng', mr: 'mar+eng+hin', ur: 'urd+eng' }[l] || 'eng+hin'; const o = $('#setOcr'); if (o) o.value = s.ocrLang; }   // photo-to-text reads the script of the chosen language
+  save(); await PiyuI18n.setLang(l); PiyuI18n.applyDom(); relang(); langChips();
+  const d = $('#langDlg'); if (d && d.open) d.close();
+}
+function langChips() { $$('.langChips').forEach(box => { box.innerHTML = LANG_LIST.map(([k, n]) => `<button type="button" class="lc ${S.settings.lang === k ? 'on' : ''}" data-l="${k}" lang="${k}">${n}</button>`).join(''); }); const sl = $('#setLang'); if (sl) sl.value = S.settings.lang; }
+document.addEventListener('click', e => { const b = e.target.closest('.langChips [data-l]'); if (b) changeLang(b.dataset.l); if (e.target.closest('#langBtn')) { langChips(); try { $('#langDlg').showModal(); } catch (er) { } } });
+function detectLang() {
+  const s = S.settings; if (window.__PIYU_NO_DETECT || s.langSet || S.tasks.length || S.docs.length || s.loggedIn || s.mode || s.sname || s.token) return;     // only a brand-new install: nobody's existing choice is ever changed
+  const nl = (navigator.languages && navigator.languages[0] || navigator.language || 'hi').toLowerCase().slice(0, 2), m = { en: 'en', hi: 'hi', bn: 'bn', mr: 'mr', ur: 'ur' }[nl];
+  if (m && m !== s.lang) { s.lang = m; s.langSet = true; if (m !== 'hi') s.ocrLang = { en: 'eng+hin', bn: 'ben+eng', mr: 'mar+eng+hin', ur: 'urd+eng' }[m] || s.ocrLang; }
+}
 function relang() {
   try { if (window.PiyuStudent) PiyuStudent.rerender(); } catch (e) { }
   try { renderChips(); render(); voiceUI(); fillVoiceSelects(); showSync(); aiUI(); webUI(); refreshAI(); refreshWeb(); wakeUI(); } catch (e) { console.warn('relang', e); }

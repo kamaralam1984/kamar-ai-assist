@@ -325,3 +325,10 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - **Speed**: `index.html` is served with `?v=<fingerprint>` on every script/style → cached for a year (`immutable`); repeat visit = 0 asset requests; gzip bodies cached in memory; service worker ignores the query.
 - **Docker**: `Dockerfile` (python:3.12-slim, non-root, healthcheck), `docker-compose.yml` (read-only FS, caps dropped, no-new-privileges, 1 CPU / 1.2 GB, data volume, voices mounted), `.dockerignore`. Verified: container healthy, auth, admin, TTS.
 - Tests: t26admin.py (66), t26ui.js (33), t26media.js (11).
+
+## Feature 27 — Whole-app language, voice test feedback, better PDF reading, admin languages
+- **Language everywhere**: chooser (हिन्दी / English / বাংলা / मराठी / اردو) on the start screen, a 🌐 button in the header (both modes), and Settings; a brand-new install takes the phone's language (an existing user's choice is never changed); choice is saved and synced; Urdu = right-to-left. All UI strings (incl. student mode, admin messages) have packs for en/bn/mr/ur (`i18n/pack.*.js`, 1000+ keys, checked by t12i).
+- **Voice "listen" buttons** (Hindi / Hinglish / English): always show what happens — which voice (phone / Piyu / browser), speaking animation, "done", or WHY nothing can be heard (no token, admin switched voice off, no voice on the device).
+- **PDF reading** (`core.js`: pdfLines / linesToBlocks / pdfGarbled / dropRepeats): glyph pieces joined without scattered spaces (Hindi, ligatures), two-column pages read column by column, table rows as `a | b | c`, headings from type size (study mode makes chapters from them), bullets, wrapped paragraphs, running headers/footers/page numbers removed, and pages whose text layer is unusable (old Hindi fonts like Kruti Dev, broken Devanagari maps, scans) are read with OCR (hin+eng). Scans up to 150 pages shrink on upload.
+- **Admin panel languages**: the panel itself can be switched to en / bn / mr / ur (`i18n/admin.js`, phrase-level translator, RTL for Urdu); remembered per browser.
+- Tests: t27pdf (14), t27pdfapp (9), t27lang (13), t27admlang (9).

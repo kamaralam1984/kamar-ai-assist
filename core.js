@@ -348,6 +348,112 @@
   }
 
   /* ---------- PDF (pdf.js, bundled in ./vendor, runs fully offline) ---------- */
+  /* ---------- PDF page layout: glyph runs -> lines (columns, table rows, headings, paragraphs); pure, tested in Node ---------- */
+  const medianOf = a => { if (!a.length) return 0; const t = a.slice().sort((x, y) => x - y); return t[Math.floor(t.length / 2)]; };
+  function lineFrom(items) {
+    items.sort((a, b) => a.x - b.x);
+    const h = Math.max(...items.map(i => i.h)), cells = []; let cell = '', prevEnd = null;
+    items.forEach(i => {
+      if (prevEnd !== null) {
+        const gap = i.x - prevEnd;
+        if (gap > 1.5 * h) { cells.push(cell.trim()); cell = ''; }                                  // a wide gap: another table cell / column
+        else if (gap > 0.2 * h && !/\s$/.test(cell) && !/^\s/.test(i.s)) cell += ' ';               // a word gap (glyph pieces of one word touch each other: no space)
+      }
+      cell += i.s; prevEnd = Math.max(prevEnd === null ? -1e9 : prevEnd, i.x + i.w);
+    });
+    cells.push(cell.trim());
+    const cl = cells.filter(Boolean);
+    return { t: cl.join(' ').replace(/\s+/g, ' ').trim(), cells: cl, x: items[0].x, x2: prevEnd, y: items[0].y, h };
+  }
+  /* items = pdf.js text items of ONE page -> { lines (reading order), bodyH } */
+  function pdfLines(items) {
+    const its = [];
+    (items || []).forEach(it => {
+      if (!it.str || !it.str.trim()) return;
+      const tr = it.transform || [1, 0, 0, 1, 0, 0], h = it.height || Math.abs(tr[3]) || 10;
+      its.push({ s: it.str, x: tr[4], y: tr[5], w: it.width > 0 ? it.width : it.str.length * 0.5 * h, h });
+    });
+    if (!its.length) return { lines: [], bodyH: 10 };
+    const bodyH = medianOf(its.flatMap(i => Array(Math.min(20, i.s.length)).fill(i.h))) || 10;
+    its.sort((a, b) => b.y - a.y || a.x - b.x);
+    const rows = [];
+    const overlaps = (r, i) => r.items.some(o => Math.min(o.x + o.w, i.x + i.w) - Math.max(o.x, i.x) > 0.2 * Math.min(o.w, i.w));        // two pieces of the same line never sit on top of each other
+    its.forEach(i => { const r = rows.find(z => Math.abs(z.y - i.y) < Math.max(2, 0.45 * Math.min(z.h, i.h)) && !overlaps(z, i)); if (r) { r.items.push(i); r.h = Math.max(r.h, i.h); } else rows.push({ y: i.y, h: i.h, items: [i] }); });
+    // two (or more) text columns: an empty vertical band in the middle of the page that almost no line crosses
+    const x0 = Math.min(...its.map(i => i.x)), x1 = Math.max(...its.map(i => i.x + i.w)), W = x1 - x0; let gx = null;
+    if (W > 200 && rows.length >= 8) {
+      const N = 120, cov = new Array(N).fill(0);
+      its.forEach(i => { if (i.w > W * 0.4) return; const a = Math.max(0, Math.floor((i.x - x0) / W * N)), b = Math.min(N - 1, Math.floor((i.x + i.w - x0) / W * N)); for (let k = a; k <= b; k++) cov[k]++; });      // wide titles do not count
+      const mx = Math.max(1, ...cov); let best = null, run = 0, st = 0;
+      for (let k = Math.floor(N * 0.3); k <= Math.ceil(N * 0.7); k++) { if (cov[k] <= Math.max(1, mx * 0.05)) { if (!run) st = k; run++; if (!best || run > best.len) best = { st, len: run }; } else run = 0; }
+      if (best && best.len >= 3) {
+        const g = x0 + (best.st + best.len / 2) / N * W, left = its.filter(i => i.x + i.w / 2 < g).length, cross = its.filter(i => i.x < g - 1 && i.x + i.w > g + 1).length;
+        if (left >= its.length * 0.25 && its.length - left >= its.length * 0.25 && cross <= its.length * 0.08) gx = g;
+      }
+    }
+    const lines = [], seg = { L: [], R: [] };
+    const flushSeg = () => { seg.L.forEach(r => lines.push(lineFrom(r))); seg.R.forEach(r => lines.push(lineFrom(r))); seg.L = []; seg.R = []; };
+    rows.forEach(r => {
+      if (gx === null) { lines.push(lineFrom(r.items)); return; }
+      if (r.items.some(i => i.x < gx - 1 && i.x + i.w > gx + 1)) { flushSeg(); lines.push(lineFrom(r.items)); return; }          // a full-width line (title, wide table)
+      const L = r.items.filter(i => i.x + i.w / 2 < gx), R = r.items.filter(i => i.x + i.w / 2 >= gx);
+      if (L.length) seg.L.push(L); if (R.length) seg.R.push(R);
+    });
+    flushSeg();
+    return { lines, bodyH };
+  }
+  /* real PDF text whose font has no proper unicode map (old Hindi fonts such as Kruti Dev give "izdk'k la'ys"k.k"): detect it, so the page can be read by OCR instead */
+  const COMMON_EN = new Set('the and of to in is are was for with that this from by as on at it be or an which have has not but all can will more their there been if when what who how you your we our they he she his her one each also may any these those such than then so do does did'.split(' '));
+  function pdfGarbled(text) {
+    const toks = String(text).split(/\s+/).filter(t => t.length > 2); if (toks.length < 12) return false;
+    const pua = (text.match(/[-�]/g) || []).length; if (pua > text.length * 0.03) return true;
+    const dev = (text.match(/[ऀ-ॿ]/g) || []).length, lat = (text.match(/[A-Za-z]/g) || []).length;
+    if (dev >= 30 && (text.match(/(^|\s)[\u093E-\u094D\u0901-\u0903\u093C]|\u094D\s/g) || []).length / dev > 0.008) return true;       // Devanagari with loose vowel signs / a dangling virama: the glyph-to-unicode map of this PDF is broken
+    if (lat < 20 || dev > lat * 0.3) return false;
+    const weird = toks.filter(t => /[A-Za-z][;'"\[\]{}^~|\\@<>][A-Za-z]|[ØøðñòÐ¼½¾¸¿°ÙÚÛÜ]/.test(t)).length / toks.length;
+    const common = toks.filter(t => COMMON_EN.has(t.toLowerCase().replace(/[^a-z]/g, ''))).length / toks.length;
+    return weird > 0.12 && common < 0.06;
+  }
+  const BULLET_RX = /^([•●▪◦■\-–*]|\d{1,2}[.)]|\[[ xX]?\])\s+/;
+  /* lines of one page -> blocks: headings (bigger type), table rows, bullets, paragraphs */
+  function linesToBlocks(lines, bodyH, out) {
+    if (!lines.length) return;
+    const gaps = []; for (let i = 1; i < lines.length; i++) { const g = lines[i - 1].y - lines[i].y; if (g > 0) gaps.push(g); }
+    const med = medianOf(gaps) || bodyH * 1.3, maxW = Math.max(1, ...lines.map(l => l.x2 - l.x)), left = medianOf(lines.map(l => l.x));
+    const tbl = lines.map((l, i) => {
+      if (l.cells.length < 2 || l.cells.some(c => c.length > 70)) return false;
+      const n = l.cells.length, p = lines[i - 1], q = lines[i + 1];
+      return !!((p && p.cells.length === n && p.y > l.y) || (q && q.cells.length === n && q.y < l.y));
+    });
+    let cur = null, prev = null, head = null;
+    const flush = () => { if (cur) out.push(cur); cur = null; };
+    lines.forEach((l, i) => {
+      if (tbl[i]) { flush(); head = null; out.push({ k: 'p', t: l.cells.join(' | '), row: true }); prev = null; return; }
+      const big = l.h >= bodyH * 1.25 && l.t.length < 120 && !/[.,;]$/.test(l.t);
+      if (big) {
+        if (head && prev && prev.y - l.y < l.h * 2.1) head.t += ' ' + l.t;                   // a title that wraps over two lines
+        else { flush(); head = { k: 'h', t: l.t }; out.push(head); }
+        prev = l; return;
+      }
+      head = null;
+      const bullet = BULLET_RX.test(l.t), gap = prev ? prev.y - l.y : 0;
+      const brk = !cur || !prev || bullet || /^(step|stage|qr|point)\s*\d+\b/i.test(l.t) || gap > med * 1.35 || Math.abs(l.h - prev.h) > prev.h * 0.12
+        || (/[.!?।:]$/.test(prev.t) && (prev.x2 - prev.x) < maxW * 0.72) || (l.x - prev.x > bodyH * 1.2 && l.x > left + bodyH);
+      if (brk) { flush(); cur = { k: 'p', t: l.t.replace(BULLET_RX, ''), li: bullet }; }
+      else cur.t += ' ' + l.t;
+      prev = l;
+    });
+    flush();
+  }
+  /* page numbers and running headers / footers are not content */
+  function dropRepeats(pages) {
+    const num = /^(page\s*)?[-–—\s]*\d{1,4}[-–—\s]*(of\s*\d{1,4}|\/\s*\d{1,4})?$/i, key = t => t.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
+    const edge = p => [p.lines[0], p.lines[1], p.lines[p.lines.length - 2], p.lines[p.lines.length - 1]].filter(Boolean);
+    const count = new Map(); pages.forEach(p => new Set(edge(p).map(l => key(l.t))).forEach(k => count.set(k, (count.get(k) || 0) + 1)));
+    const need = Math.max(3, Math.ceil(pages.length * 0.5));
+    pages.forEach(p => { const e = new Set(edge(p)); p.lines = p.lines.filter(l => !(e.has(l) && (num.test(l.t.trim()) || (pages.length >= 3 && count.get(key(l.t)) >= need)))); });
+  }
+
   async function pdfToBlocks(buf, opts) {
     opts = opts || {};
     const pdfjs = await import('./vendor/pdf.min.mjs');
@@ -356,49 +462,26 @@
     try { doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise; }
     catch (e) { throw new Error(e && e.name === 'PasswordException' ? 'Yeh PDF password se locked hai.' : 'PDF padh nahi paayi: ' + (e.message || e)); }
     const blocks = []; let total = 0, ocrPages = 0, confSum = 0; const maxOcr = opts.maxOcrPages || 60;
+    const pages = [];                                    // per page: { lines, bodyH } (text) or { ocr: blocks } (scan / unreadable font)
     for (let pn = 1; pn <= doc.numPages; pn++) {
-      const page = await doc.getPage(pn); const tc = await page.getTextContent();
-      const lines = [];
-      tc.items.forEach(it => {
-        if (!it.str || !it.str.trim() && !it.hasEOL) { if (it.str === ' ' && lines.length) lines[lines.length - 1].t += ' '; return; }
-        const y = it.transform[5], x = it.transform[4];
-        const l = lines.find(z => Math.abs(z.y - y) < 2.5);
-        if (l) { l.parts.push({ x, s: it.str }); l.h = Math.max(l.h, it.height || 0); } else lines.push({ y, h: it.height || 10, parts: [{ x, s: it.str }] });
-      });
-      lines.forEach(l => { l.parts.sort((a, b) => a.x - b.x); l.t = l.parts.map(z => z.s).join(' ').replace(/\s+/g, ' ').trim(); });
-      lines.sort((a, b) => b.y - a.y);
-      const ph = page.view[3] - page.view[1];
-      const L0 = lines.filter(l => l.t && !(l.y < page.view[1] + ph * 0.04 || l.y > page.view[3] - ph * 0.04 || /^.{0,80}\bpage \d+( of \d+)?$/i.test(l.t)));
-      const L = L0;
-      if (!L.length) {                                   // no text layer on this page: it is a scan -> OCR it
-        if (!root.PiyuOCR || ocrPages >= maxOcr) continue;
+      const page = await doc.getPage(pn), tc = await page.getTextContent(), lay = pdfLines(tc.items);
+      const text = lay.lines.map(l => l.t).join(' '), garbled = lay.lines.length > 0 && pdfGarbled(text);
+      if (!lay.lines.length || garbled) {                // no text layer (a scan) or text from a font without unicode: read the picture with OCR
+        if (!root.PiyuOCR || ocrPages >= maxOcr) { if (lay.lines.length) { pages.push(lay); total += lay.lines.length; if (garbled) blocks.garbled = true; } continue; }
         if (opts.signal && opts.signal.aborted) throw new Error(_t("OCR रद्द किया"));
         const vp = page.getViewport({ scale: 2.4 }), cv = document.createElement('canvas');
         cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
         const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
         await page.render({ canvasContext: cx, viewport: vp }).promise;
-        const r = await root.PiyuOCR.recognize(cv, { langs: opts.langs, signal: opts.signal, onProgress: (st, f) => opts.onProgress && opts.onProgress(st, f, pn, doc.numPages) });
+        const r = await root.PiyuOCR.recognize(cv, { langs: garbled ? 'hin+eng' : opts.langs, signal: opts.signal, onProgress: (st, f) => opts.onProgress && opts.onProgress(st, f, pn, doc.numPages) });
         ocrPages++; confSum += r.confidence; total++;
-        blocks.push(...ocrTextToBlocks(r.text));
+        pages.push({ ocr: ocrTextToBlocks(r.text) });
         continue;
       }
-      total += L.length;
-      const maxLen = Math.max(...L.map(l => l.t.length));
-      const gaps = []; for (let i = 1; i < L.length; i++) { const g = L[i - 1].y - L[i].y; if (g > 0) gaps.push(g); }
-      gaps.sort((a, b) => a - b);
-      const med = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 12;
-      let cur = null, prev = null;
-      const flush = () => { if (cur) blocks.push(cur); cur = null; };
-      L.forEach(l => {
-        const bullet = /^([•●▪◦■\-–*]|\d{1,2}[.)]|\[[ xX]?\])\s+/.test(l.t);
-        const gap = prev ? prev.y - l.y : 0;
-        const brk = !cur || bullet || /^(step|stage|qr|point)\s*\d+\b/i.test(l.t) || gap > med * 1.3 || Math.abs(l.h - prev.h) > prev.h * 0.1 || (/[.!?।:]$/.test(prev.t) && prev.t.length < maxLen * 0.6);
-        if (brk) { flush(); cur = { k: 'p', t: l.t.replace(/^([•●▪◦■\-–*]|\d{1,2}[.)]|\[[ xX]?\])\s+/, ''), li: bullet }; }
-        else cur.t += ' ' + l.t;
-        prev = l;
-      });
-      flush();
+      pages.push(lay); total += lay.lines.length;
     }
+    dropRepeats(pages.filter(p => p.lines));
+    pages.forEach(p => { if (p.ocr) blocks.push(...p.ocr); else linesToBlocks(p.lines, p.bodyH, blocks); });
     if (!total) throw new Error('Is PDF me text nahi mila aur OCR chalu nahi hai. Text wali PDF ya .docx upload karein.');
     // short ALL-CAPS lines become headings
     blocks.forEach(b => { if (b.t.length < 70 && /[A-Z]{4}/.test(b.t) && b.t === b.t.toUpperCase() && !/[.!]$/.test(b.t)) { b.k = 'h'; b.li = false; } });
@@ -1021,7 +1104,7 @@
     return '';
   }
 
-  const api = { parseDayRange, planAlarms, hash32, docConfidence, answersQuery, jaccard, kbFind, kbAdd, searchLinks, wakeMatch, ocrTextToBlocks, buildStats, niceMax, inQuiet, alertPolicy, MOODS, buildBrief, briefDue, streakDays, fmtHM, extractLinks, makeSubtasks, priorityOf, linkDeps, blockers, wouldCycle, taskScore, pickNext, whyNext, parseRepeat, nextOccurrence, repeatLabel, wordToBlocks, pptToBlocks, pptxToBlocks, fileToBlocks, docxXmlToBlocks, textToBlocks, zipEntry, parseWhen, analyze, buildIndex, search, matchTask, howTo, tokens };
+  const api = { pdfLines, linesToBlocks, pdfGarbled, dropRepeats, parseDayRange, planAlarms, hash32, docConfidence, answersQuery, jaccard, kbFind, kbAdd, searchLinks, wakeMatch, ocrTextToBlocks, buildStats, niceMax, inQuiet, alertPolicy, MOODS, buildBrief, briefDue, streakDays, fmtHM, extractLinks, makeSubtasks, priorityOf, linkDeps, blockers, wouldCycle, taskScore, pickNext, whyNext, parseRepeat, nextOccurrence, repeatLabel, wordToBlocks, pptToBlocks, pptxToBlocks, fileToBlocks, docxXmlToBlocks, textToBlocks, zipEntry, parseWhen, analyze, buildIndex, search, matchTask, howTo, tokens };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PiyuCore = api;
 })(typeof self !== 'undefined' ? self : this);

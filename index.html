@@ -22,6 +22,7 @@
     <div class="hint" id="loginMsg" role="status"></div>
     <button type="button" class="btn ghost sm" id="pinForgot" hidden>PIN भूल गए?</button>
   </div>
+  <div class="langChips langRow" data-i18n-skip aria-label="Language"></div>
   <div id="modeBox" class="modeBox">
     <p class="modeQ">आप कौन हैं?</p>
     <div class="modeCards">
@@ -32,6 +33,12 @@
   <button id="startBtn" class="btn primary xl">Piyu को जगाएँ</button>
   <small>एक बार टैप करने से आवाज़ और alarm चालू हो जाएँगे</small>
 </div>
+
+<dialog id="langDlg">
+  <h3>🌐 Language / भाषा</h3>
+  <div class="langChips big" data-i18n-skip></div>
+  <div class="btns"><button type="button" class="btn ghost" onclick="document.getElementById('langDlg').close()">✕</button></div>
+</dialog>
 
 <dialog id="permDlg">
   <h3>🔐 Piyu को कुछ अनुमतियाँ चाहिए</h3>
@@ -68,6 +75,7 @@
       </div>
       <span id="modeBadge" class="modeBadge" hidden></span>
     </div>
+    <button id="langBtn" class="gearBtn" type="button" title="Language" aria-label="Language">🌐</button>
     <button id="gearBtn" class="gearBtn" type="button" title="Settings" aria-label="Settings" hidden>⚙️</button>
     <div class="clock"><b id="clock">--:--</b><span id="date"></span></div>
   </header>
