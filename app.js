@@ -1775,12 +1775,19 @@ document.addEventListener('click', e => {
 
 function goTab(n) {
   $$('.tab').forEach(x => x.classList.toggle('active', x.id === 'tab-' + n));
-  $$('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === n));
+  $$('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === n)); if (typeof goldPlace === 'function') goldPlace();
   window.scrollTo(0, 0);
   if (n === 'prog') renderProg();
   if (n === 'chat') { const nb = $('nav [data-tab=chat]'); if (nb) nb.classList.remove('dot'); }
 }
 $$('nav button').forEach(b => b.onclick = () => goTab(b.dataset.tab));
+/* the golden line under the active tab slides to it (and follows on resize / language change) */
+function goldPlace() {
+  const nav = $('nav'); if (!nav) return; let g = nav.querySelector('.goldbar'); if (!g) { g = document.createElement('span'); g.className = 'goldbar'; nav.prepend(g); }
+  const on = nav.querySelector('button.on'); if (!on) return;
+  const w = Math.max(24, on.offsetWidth * 0.46); g.style.width = w + 'px'; g.style.transform = 'translateX(' + (on.offsetLeft + (on.offsetWidth - w) / 2) + 'px)';
+}
+window.addEventListener('resize', goldPlace); window.addEventListener('load', () => setTimeout(goldPlace, 50)); setTimeout(goldPlace, 300);
 
 $('#file').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
 $('#camFile').onchange = e => {
