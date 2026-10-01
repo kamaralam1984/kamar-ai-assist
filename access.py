@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS security(id INTEGER PRIMARY KEY AUTOINCREMENT, at INT
 CREATE TABLE IF NOT EXISTS geo(ip TEXT PRIMARY KEY, country TEXT, cc TEXT, region TEXT, city TEXT, isp TEXT, at INTEGER);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS admin_sessions(hash TEXT PRIMARY KEY, exp INTEGER);
+CREATE TABLE IF NOT EXISTS visitors(ip TEXT PRIMARY KEY, ua TEXT, first INTEGER, last INTEGER, hits INTEGER DEFAULT 0, country TEXT DEFAULT '', cc TEXT DEFAULT '', city TEXT DEFAULT '', path TEXT DEFAULT '');
 """
 FEATURES = ('voice', 'ai', 'web', 'docs', 'student', 'business')
 EXTRA_COLS = (('features', "TEXT DEFAULT ''"), ('country', "TEXT DEFAULT ''"), ('cc', "TEXT DEFAULT ''"), ('city', "TEXT DEFAULT ''"), ('last_ua', "TEXT DEFAULT ''"), ('first_seen', 'INTEGER'))
@@ -313,6 +314,24 @@ class Access:
         with self.lock, self._con() as c:
             c.execute('DELETE FROM admin_sessions WHERE hash=?', (hashlib.sha256(str(tok).encode()).hexdigest(),))
 
+
+    # ---------- devices that open the app without a valid token (they see nothing, but the admin should know) ----------
+    def visitor(self, ip, ua, path=''):
+        now = int(time.time() * 1000); g = self.geo(ip) or {}
+        with self.lock, self._con() as c:
+            c.execute('INSERT INTO visitors(ip,ua,first,last,hits,country,cc,city,path) VALUES(?,?,?,?,1,?,?,?,?) ON CONFLICT(ip) DO UPDATE SET last=excluded.last, hits=hits+1, ua=excluded.ua, path=excluded.path, '
+                      "country=CASE WHEN excluded.country<>'' THEN excluded.country ELSE country END, cc=CASE WHEN excluded.cc<>'' THEN excluded.cc ELSE cc END, city=CASE WHEN excluded.city<>'' THEN excluded.city ELSE city END",
+                      (ip, str(ua)[:200], now, now, g.get('country', ''), g.get('cc', ''), g.get('city', ''), str(path)[:60]))
+            c.execute('DELETE FROM visitors WHERE last < ?', (now - 30 * 864e5,))
+
+    def visitors(self, n=20, days=7):
+        with self._con() as c:
+            return [dict(r) for r in c.execute('SELECT * FROM visitors WHERE last>? ORDER BY last DESC LIMIT ?', (int(time.time() * 1000) - days * 864e5, n))]
+
+    def clear_visitors(self):
+        with self.lock, self._con() as c:
+            c.execute('DELETE FROM visitors')
+
     # ---------- audit + security log ----------
     def audit(self, actor, action, target='', detail=''):
         with self.lock, self._con() as c:
@@ -377,6 +396,7 @@ class Access:
             c.execute("UPDATE logins SET country=?, cc=?, city=? WHERE ip=? AND country=''", (country, cc, city, ip))
             c.execute("UPDATE security SET country=? WHERE ip=? AND country=''", (country, ip))
             c.execute("UPDATE users SET country=?, cc=?, city=? WHERE last_ip=?", (country, cc, city, ip))
+            c.execute("UPDATE visitors SET country=?, cc=?, city=? WHERE ip=? AND country=''", (country, cc, city, ip))
 
     # ---------- usage tracking: sessions, time on each page ----------
     def track(self, uid, sid, ip, ua, device, tab, dt, vis, mode=''):

@@ -140,6 +140,7 @@ function askToken(code) {
   const dlg = $('#tokDlg'); if (!dlg || dlg.open) return;
   $('#tokIn').value = ''; $('#tokMsg').textContent = (typeof code === 'string' && code !== 'token' && ACCESS_MSG[code]) ? '⚠ ' + _t(ACCESS_MSG[code]) : '';
   try { $('#reqName').value = localStorage.getItem('piyu.reqName') || ''; $('#reqPhone').value = localStorage.getItem('piyu.reqPhone') || ''; } catch (e) { }
+  { const must = !S.settings.token && !localStorage.getItem('piyu.req'); $('#tokLater').hidden = must; dlg.oncancel = e => { if (must) e.preventDefault(); }; }      // nobody can wave the dialog away without a token or a request
   $('#reqMsg').textContent = ''; if (localStorage.getItem('piyu.req')) { checkReg(); clearInterval(regTimer); regTimer = setInterval(() => { if (!$('#tokDlg').open) clearInterval(regTimer); else checkReg(); }, 15000); }
   try { dlg.showModal(); } catch (e) { const t = prompt(_t('इस server का Sync token डालें (जो सिर्फ़ आपको पता है)'), ''); if (t) applyToken(t); return; }
   setTimeout(() => $('#tokIn').focus(), 200);

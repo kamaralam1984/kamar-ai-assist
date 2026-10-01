@@ -83,6 +83,21 @@ def reg_ok(ip, limit=5, per=3600):
         return True
 
 
+_VISITS = {}
+def visit_log(ip, ua, path):
+    """a device without a valid token: remembered once a minute per IP so the admin can see who is trying"""
+    now = time.time()
+    if ACC is None or now - _VISITS.get(ip, 0) < 60:
+        return
+    _VISITS[ip] = now
+    if len(_VISITS) > 3000:
+        _VISITS.clear()
+    try:
+        ACC.visitor(ip, ua, path)
+    except Exception:
+        pass
+
+
 _SECLOG = {}
 def sec_log(kind, ip, detail=''):
     """security events for the admin panel (one line per kind+IP per minute, so a flood cannot fill the log)"""
@@ -317,6 +332,7 @@ class H(SimpleHTTPRequestHandler):
             return None, 'token'
         hdr = self.headers.get('X-Piyu-Token', '')
         if not hdr:
+            visit_log(ip, self.headers.get('User-Agent', ''), urlparse(self.path).path)
             return None, 'token'
         if hmac.compare_digest(hdr, t):
             return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': OWNER_NAME}, None
@@ -325,6 +341,8 @@ class H(SimpleHTTPRequestHandler):
             if err == 'token':
                 fail_add(ip)
             sec_log(err if err != 'token' else 'bad-token', ip, err)
+            if err == 'token':
+                visit_log(ip, self.headers.get('User-Agent', ''), urlparse(self.path).path)
             return None, err
         return {'role': 'user', 'uid': u['id'], 'db': dbpath_ready(ACC.user_db(u['id'])), 'name': u['name'], 'features': ACC.feature_map(u), 'user': u}, None
 
@@ -513,6 +531,12 @@ class H(SimpleHTTPRequestHandler):
             card['studentFull'] = stu; card['business'] = adminlib.business_summary(st, now)
         return card
 
+    def _owner_card(self, online):
+        """the owner's own usage (the owner is not in the users list, but also uses the app)"""
+        us = ACC.usage_of(0, 7); ss = ACC.sessions_of(0, 1); last = ss[0] if ss else {}
+        return {'id': 0, 'name': OWNER_NAME, 'online': any(s['uid'] == 0 for s in online), 'minutes7': round(us['total'] / 60) if us else 0, 'lastSeen': last.get('last'), 'ip': last.get('ip', ''),
+                'country': last.get('country', ''), 'cc': last.get('cc', ''), 'city': last.get('city', ''), 'sessions': us.get('sessions', 0) if us else 0, 'ua': last.get('ua', '')}
+
     def admin(self, method, path, ctx):
         if ctx['role'] != 'owner' or not token():
             return self.send_json(403, {'error': 'owner-only'})
@@ -540,7 +564,14 @@ class H(SimpleHTTPRequestHandler):
                 'countries': ACC.countries(30), 'top': top,
                 'health': adminlib.health(DATA, models), 'storage': adminlib.storage(ACC),
                 'security': ACC.recent('security', 25), 'audit': ACC.recent('audit', 25), 'logins': ACC.recent('logins', 25),
-                'announcement': ACC.meta_get('announcement'), 'features': list(access.FEATURES), 'geoip': ACC.geo_on, 'owner': OWNER_NAME, 'adminEmail': ACC.admin_email()})
+                'announcement': ACC.meta_get('announcement'), 'features': list(access.FEATURES), 'geoip': ACC.geo_on, 'owner': OWNER_NAME, 'adminEmail': ACC.admin_email(), 'visitors': ACC.visitors(20), 'ownerCard': self._owner_card(on)})
+        if path == '/api/admin/visitors/clear' and method == 'POST':
+            ACC.clear_visitors(); ACC.audit('owner', 'clear-visitors', '', ''); return self.send_json(200, {'ok': True})
+        m0 = re.match(r'^/api/admin/owner$', path)
+        if m0 and method == 'GET':
+            on = {s['uid'] for s in ACC.online()}; st = self._user_state(0); now = int(time.time() * 1000)
+            return self.send_json(200, {'owner': self._owner_card(ACC.online()), 'usage': ACC.usage_of(0, 30), 'sessions': ACC.sessions_of(0, 15), 'logins': ACC.logins_of(0, 15),
+                                        'student': adminlib.student_summary(st, now) if (st.get('courses') or (st.get('settings') or {}).get('mode') == 'student') else None, 'business': adminlib.business_summary(st, now)})
         if path == '/api/admin/users' and method == 'GET':
             us = ACC.list(); on = {s['uid'] for s in ACC.online()}; u7 = ACC.usage_totals(7)
             return self.send_json(200, {'users': [self._card(u, u7, on) for u in us], 'pending': sum(1 for u in us if u['status'] == 'pending'), 'now': int(time.time() * 1000)})
