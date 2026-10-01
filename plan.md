@@ -309,3 +309,9 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - **Self-learning + memory:** remembers profile, studied/remaining chapters (also sent with AI questions); learns best study hours and completion rate (shifts the plan, lengthens/shortens sessions), weakest question type, turns mistakes into cards.
 - Data: S.courses / S.cards / S.attempts / S.sdays synced like tasks; settings keys s*.
 - Tests: t25study (50), t25ui (39), t25learn (11).
+
+## Feature 25 — Better local AI (free)
+- VPS runs Ollama (limits: Nice 15, CPU 150 %, memory 2.3–2.7 GB, model unloads after 30 s). Base **Qwen2.5 3B** + our persona model **`piyu-teacher`** (Modelfile in `deploy/ollama_piyu.sh`); Piyu picks `piyu-*` first, else the biggest allowed model ≤ `PIYU_AI_MAX_B` (4 B).
+- Faster, tighter answers: smaller context (5 excerpts × 560 chars), `num_ctx 3072`, `num_predict 220`; prompt: find the exact sentence → say it simply → no invented facts; student profile → patient teacher tone.
+- Own fine-tuning (free GPU): `finetune/make_dataset.js` (dataset from your documents with study.js), `finetune/piyu_finetune_colab.ipynb` (LoRA on Colab/Kaggle, export GGUF), `finetune/README.md`.
+- Checked on the VPS: all 18 sites unchanged, swap unchanged, memory recovered to ~3 GB free after a 3B answer.

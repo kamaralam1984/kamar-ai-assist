@@ -222,12 +222,12 @@ def gc_blobs(con, older_than_ms=86400000, now_ms=None):
     return cur.rowcount
 
 
-def ai_context(con, q, k=6, max_chars=5000):
+def ai_context(con, q, k=5, max_chars=2800):
     """What the local LLM may see: the best-matching document excerpts (FTS5/bm25) + the pending task list. Nothing else."""
     hits = search(con, q, k)
     ex, used = [], 0
     for h in hits:
-        t = h['text'][:700]
+        t = h['text'][:560]
         if used + len(t) > max_chars:
             break
         ex.append({'doc': h['doc'], 'text': t}); used += len(t)

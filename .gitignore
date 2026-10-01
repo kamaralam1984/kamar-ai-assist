@@ -17,3 +17,5 @@ apk/*.apk
 _img/
 _imp/
 _h.pdf
+finetune/dataset.jsonl
+finetune/state.json
