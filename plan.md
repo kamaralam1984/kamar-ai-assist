@@ -332,3 +332,32 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - **PDF reading** (`core.js`: pdfLines / linesToBlocks / pdfGarbled / dropRepeats): glyph pieces joined without scattered spaces (Hindi, ligatures), two-column pages read column by column, table rows as `a | b | c`, headings from type size (study mode makes chapters from them), bullets, wrapped paragraphs, running headers/footers/page numbers removed, and pages whose text layer is unusable (old Hindi fonts like Kruti Dev, broken Devanagari maps, scans) are read with OCR (hin+eng). Scans up to 150 pages shrink on upload.
 - **Admin panel languages**: the panel itself can be switched to en / bn / mr / ur (`i18n/admin.js`, phrase-level translator, RTL for Urdu); remembered per browser.
 - Tests: t27pdf (14), t27pdfapp (9), t27lang (13), t27admlang (9).
+
+## PLAN — Feature 28: Kids mode (not built yet)
+All free: no paid API, no push service, no map subscription.
+
+### Sign-up (parent)
+Start screen: 👶 Kids / 🎓 Student / 💼 Business. Parent sets child name, age, class, parent mobile and a 4-digit **Parent PIN** (guards Settings, parent panel, location). Child picks an avatar.
+
+### Child screens (5 big tabs, mostly icons + voice): Aaj · Seekho · Khelo · Kahani · Mere Stars
+- **Aaj**: daily routine alarms (wake, brush, school, homework, play, sleep) with the calm teacher voice; child taps "done ✅" → star. Works with the app closed (native alarm).
+- **Stars / badges / streak / levels**; fun avatar items (no money).
+- **Seekho**: letters, counting, tables, colours, shapes; speak-and-check (phone speech recognition) for poems/spelling/tables; photo of homework → simple explanation (OCR + study engine).
+- **Khelo**: 1–2 minute games (word match, counting, memory cards, pairs, pick the right answer) made by the study engine from the child's class.
+- **Kahani**: Hindi/English stories read aloud, bedtime story, one question after each.
+
+### Parent panel (PIN)
+Daily report (minutes, games, stars, routine done/missed), screen-time limit + bedtime lock, edit routine, weak spots ("confuses b/d"), messages to parent ("all tasks done 🎉"). Parent can export/delete everything.
+
+### 📍 Safety (location) — consent based
+- Parent-set **safe places** (home, school, tuition…) as circles (default 100 m). Child phone checks **every 1–3 min** (Android foreground service, battery-friendly). Alerts: "✅ reached school 8:12", "🏠 left school", "late: not home 30 min after school", "location off for 20 min".
+- **Last known location**, distance from home/school/**parent** (parent phone shares only if parent turns it on), **SOS** big button → alert with position, 7-day history (auto-deleted).
+- **Map, free**: default = built-in radar/schematic view (safe places + child + distances, works offline, no tiles). Optional real map = **OpenStreetMap tiles with Leaflet** (free for light use, attribution shown, tiles cached by the service worker, loaded only when the parent opens the map). No Google Maps, no key.
+- Parent alerts without Google push: the parent's Piyu runs the same background service and polls the server every minute → local notification (1–2 min delay possible).
+- Privacy: parent consent screen on the child's phone, always-visible "location sharing ON" mark, only the parent sees location (the admin sees only on/off), minimum data, 7-day retention, only for children with parent consent. New native code → new APK.
+
+### Safety of the child mode
+No chat, no open internet, no external links; AI answers only study/story questions; only name/age/class stored.
+
+### Build order
+1 sign-up + parent PIN → 2 routine + stars + avatar → 3 parent panel/report → 4 safe places + arrived/left alerts + SOS (+APK) → 5 map (radar then OSM) → 6 Seekho / Khelo / Kahani.
