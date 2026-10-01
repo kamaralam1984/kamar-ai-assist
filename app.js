@@ -12,19 +12,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const KEY = 'piyu.v1';
 const DEF = { docs: [], tasks: [], settings: { lang: 'hi', micLang: '', pvBn: '', pvMr: '', pvUr: '', voiceHi: '', voiceEn: '', rate: 0.9, pitch: 1.2, vol: 1, preMin: 10, call: 'सर', owner: 'कमर आलम', ownerEn: 'Kamar Alam', wake: true, briefOn: true, briefMorning: '08:00', briefNight: '21:30', ocrLang: 'eng+hin', pvHi: 'hi-priyamvada', pvEn: 'en-jenny', persona: 'piyu', mindRoman: true, mindEmpathy: true, mindAsk: true, webOn: false, style: 'normal', pitchSt: 0, hinglish: true, aiOn: false, aiModel: '', wakeOn: false, quietOn: false, quietFrom: '23:00', quietTo: '07:00', quietHard: false } };
 let S = JSON.parse(JSON.stringify(DEF));
-S.tombstones = []; S.settingsAt = 0; S.facts = []; S.episodes = []; S.days = []; S.kb = []; S.mind = PiyuMind.newMind();
+S.tombstones = []; S.settingsAt = 0; S.facts = []; S.episodes = []; S.days = []; S.kb = []; S.courses = []; S.cards = []; S.attempts = []; S.sdays = []; S.mind = PiyuMind.newMind();
 const storeReady = Store.load().then(st => {
   if (st) { S = st; }
   S.docs = S.docs || []; S.tasks = S.tasks || []; S.tombstones = S.tombstones || []; S.settingsAt = S.settingsAt || 0;
-  S.facts = S.facts || []; S.episodes = S.episodes || []; S.days = S.days || []; S.kb = S.kb || []; if (!S.mind) S.mind = PiyuMind.newMind();
+  S.facts = S.facts || []; S.episodes = S.episodes || []; S.days = S.days || []; S.kb = S.kb || []; S.courses = S.courses || []; S.cards = S.cards || []; S.attempts = S.attempts || []; S.sdays = S.sdays || []; if (!S.mind) S.mind = PiyuMind.newMind();
   S.settings = Object.assign({}, DEF.settings, S.settings);
   snapshot();
-}).catch(() => { snapshot(); }).then(() => PiyuI18n.setLang(S.settings.lang)).then(() => { try { loginUI(); } catch (e) { } });
+}).catch(() => { snapshot(); }).then(() => PiyuI18n.setLang(S.settings.lang)).then(() => { try { loginUI(); if (window.PiyuStudent) PiyuStudent.loginUI(); } catch (e) { } });
 
 /* change tracking: every task/doc gets an updatedAt stamp when it changes, deletions become tombstones (needed for sync) */
 const skipStamp = (k, v) => k === 'updatedAt' ? undefined : v;
 let snapT = new Map(), snapD = new Set(), snapSet = '', snapX = {}, snapMind = '';
-const XLISTS = [['facts', 'fact'], ['episodes', 'ep'], ['days', 'day'], ['kb', 'kb']];
+const XLISTS = [['facts', 'fact'], ['episodes', 'ep'], ['days', 'day'], ['kb', 'kb'], ['courses', 'course'], ['cards', 'card'], ['attempts', 'att'], ['sdays', 'sday']];
 const setKey = () => JSON.stringify(S.settings, (k, v) => Store.DEVICE_KEYS.includes(k) ? undefined : v);
 function snapshot() {
   snapT = new Map(S.tasks.map(t => [t.id, JSON.stringify(t, skipStamp)]));
@@ -360,7 +360,7 @@ function forSpeech(text) {
   return t;
 }
 const learnedDelta = mood => (S.mind && S.mind.on ? PiyuMind.voiceDelta(S.mind, PiyuMind.ctxKey(Date.now(), mood || 'calm')) : null);   // what Piyu has learnt about how you like her voice
-function vparams(mood) { return VK.voiceParams(S.settings.style, mood, S.settings.rate, S.settings.pitchSt, learnedDelta(mood)); }
+function vparams(mood) { return VK.voiceParams(S.settings.mode === 'student' ? 'teacher' : S.settings.style, mood, S.settings.rate, S.settings.pitchSt, learnedDelta(mood)); }
 const pvFor = lang => lang === 'hi' ? S.settings.pvHi : lang === 'en' ? S.settings.pvEn : (S.settings['pv' + lang[0].toUpperCase() + lang.slice(1)] || '');
 const speechLang = () => SCRIPT[S.settings.lang] ? S.settings.lang : 'en';   // the language Piyu speaks (hi / mr / bn / ur, else English)
 
@@ -523,6 +523,7 @@ const ALERT = 15 * 60000; // ring only if we are within 15 min of the time (page
 
 const blockedBy = t => C.blockers(t, S.tasks);
 function taskReminderText(t, kind, mins) {
+  if (t.study && window.studyReminder) return window.studyReminder(t, kind, mins);
   const c = CALL();
   const bl = blockedBy(t)[0];
   if (bl) return kind === 'pre'
@@ -1234,7 +1235,7 @@ async function askWeb(q, fb, mm) {
   };
   const t0 = setTimeout(() => { if (!got && !none) ctl.abort(); }, 40000), t1 = setTimeout(() => ctl.abort(), 120000);
   try {
-    const r = await fetchU('/api/web/ask', { method: 'POST', signal: ctl.signal, headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), body: JSON.stringify({ q, alt: PiyuTranslit.isHinglish(q) ? PiyuTranslit.hinglish(q) : '', owner: S.settings.ownerEn, history: chatHist.slice(-5, -1), profile: mindOn() ? MD.hint(S, q, Date.now()) : '' }) });
+    const r = await fetchU('/api/web/ask', { method: 'POST', signal: ctl.signal, headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), body: JSON.stringify({ q, alt: PiyuTranslit.isHinglish(q) ? PiyuTranslit.hinglish(q) : '', owner: S.settings.ownerEn, history: chatHist.slice(-5, -1), profile: (((window.studentMemory ? window.studentMemory() : '') + ' ' + (mindOn() ? MD.hint(S, q, Date.now()) : '')).trim()) }) });
     if (!r.ok) throw new Error('http ' + r.status);
     const rd = r.body.getReader(), dec = new TextDecoder(); let acc = '';
     for (;;) {
@@ -1286,7 +1287,7 @@ async function askAI(q, fb, mm) {
   try {
     while (syncing) await sleep(80);
     await syncNow();                    // the server builds the AI context from its SQL copy, so make sure it is current
-    const r = await fetchU('/api/ai/chat', { method: 'POST', signal: ctl.signal, headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), body: JSON.stringify({ q, model: S.settings.aiModel || undefined, owner: S.settings.ownerEn, history: chatHist.slice(-5, -1), profile: mindOn() ? MD.hint(S, q, Date.now()) : '' }) });
+    const r = await fetchU('/api/ai/chat', { method: 'POST', signal: ctl.signal, headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), body: JSON.stringify({ q, model: S.settings.aiModel || undefined, owner: S.settings.ownerEn, history: chatHist.slice(-5, -1), profile: (((window.studentMemory ? window.studentMemory() : '') + ' ' + (mindOn() ? MD.hint(S, q, Date.now()) : '')).trim()) }) });
     if (!r.ok) throw new Error('http ' + r.status);
     const rd = r.body.getReader(), dec = new TextDecoder(); let acc = '';
     for (;;) {
@@ -1802,9 +1803,10 @@ function goTab(n) {
   $$('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === n)); if (typeof goldPlace === 'function') goldPlace();
   window.scrollTo(0, 0);
   if (n === 'prog') renderProg();
+  if (window.PiyuStudent) PiyuStudent.onTab(n);
   if (n === 'chat') { const nb = $('nav [data-tab=chat]'); if (nb) nb.classList.remove('dot'); }
 }
-$$('nav button').forEach(b => b.onclick = () => goTab(b.dataset.tab));
+$('nav').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) goTab(b.dataset.tab); });
 /* the golden line under the active tab slides to it (and follows on resize / language change) */
 function goldPlace() {
   const nav = $('nav'); if (!nav) return; let g = nav.querySelector('.goldbar'); if (!g) { g = document.createElement('span'); g.className = 'goldbar'; nav.prepend(g); }
@@ -2016,6 +2018,7 @@ function bindSettings() {
 
 /* the UI language changed: redraw everything that was built from strings */
 function relang() {
+  try { if (window.PiyuStudent) PiyuStudent.rerender(); } catch (e) { }
   try { renderChips(); render(); voiceUI(); fillVoiceSelects(); showSync(); aiUI(); webUI(); refreshAI(); refreshWeb(); wakeUI(); } catch (e) { console.warn('relang', e); }
   if (typeof nativeNow === 'function') nativeNow();
 }
@@ -2111,10 +2114,12 @@ async function bgOn() {
 $('#loginPin').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 6); });
 $('#startBtn').onclick = async () => {
   await storeReady; await deviceReady;
+  if (window.PiyuStudent && !PiyuStudent.ensureMode()) return;
   if (!(await nativeLogin())) return;
   bgOn(); permsOnboard(); refreshPerms();
   await detectNeural();
   $('#splash').hidden = true; $('#app').hidden = false;
+  if (window.PiyuStudent) { PiyuStudent.applyMode(); setTimeout(() => { PiyuStudent.onboard(); PiyuStudent.autoTick(); }, 900); setInterval(() => PiyuStudent.autoTick(), 600000); }
   audio(); keepAwake();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => { });
   if (!synth && !neural) toast(_t("आवाज़ उपलब्ध नहीं — ./run.sh से चलाएँ"));

@@ -10,6 +10,7 @@
     serious:   { name: 'गंभीर', desc: 'ठहरी हुई, भारी और संजीदा', sp: 1.08, noise: 0.40, nw: 0.40, st: -1.2 },
     story:     { name: 'कहानी सुनाने वाला', desc: 'धीमा, उतार-चढ़ाव वाला अंदाज़', sp: 1.18, noise: 0.80, nw: 0.90, st: 0 },
     energetic: { name: 'जोशीला', desc: 'तेज़ और जोश से भरा', sp: 0.86, noise: 0.80, nw: 0.80, st: 0.8 },
+    teacher:   { name: 'शिक्षिका', desc: 'शांत, नरम और ठहरी हुई', sp: 1.14, noise: 0.33, nw: 0.36, st: -1.0 },
     night:     { name: 'रात की फुसफुसाहट', desc: 'बहुत धीमी और शांत', sp: 1.25, noise: 0.30, nw: 0.30, st: -0.8 }
   };
   /* situational moods change the style a little (multiplier on speed, additions on the rest) */
@@ -40,6 +41,7 @@
     { id: 'kahani', name: 'Kahaniwali', tag: 'कहानी सुनाने वाली', hi: 'hi-priyamvada', en: 'en-alba', style: 'story', st: 0 },
     { id: 'aarav',  name: 'Aarav', tag: 'शांत पुरुष', hi: 'hi-pratham', en: 'en-ryan', style: 'normal', st: 0 },
     { id: 'rohan',  name: 'Rohan', tag: 'जोशीला पुरुष', hi: 'hi-rohan', en: 'en-northern', style: 'energetic', st: 0 },
+    { id: 'teacher', name: 'Teacher', tag: 'शांत, नरम शिक्षिका', hi: 'hi-priyamvada', en: 'en-jenny', style: 'teacher', st: -0.5 },
     { id: 'guru',   name: 'Guru', tag: 'गंभीर पुरुष', hi: 'hi-pratham', en: 'en-northern', style: 'serious', st: -0.5 }
   ];
 

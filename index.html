@@ -13,7 +13,7 @@
 
 <!-- Start screen: browsers need one tap before sound/voice can play -->
 <div id="splash">
-  <div class="orb big"><i></i><i></i><i></i></div>
+  <div class="orb big"><div class="radar" aria-hidden="true"><span class="rg"></span><span class="rg g"></span><span class="rg"></span><span class="sweep"></span><span class="blip b1"></span><span class="blip b2"></span><span class="blip b3"></span></div><i></i><i></i><i></i></div>
   <h1>Piyu</h1>
   <p>आपकी पर्सनल असिस्टेंट</p>
   <div id="loginBox" hidden>
@@ -21,6 +21,13 @@
     <input id="loginPin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
     <div class="hint" id="loginMsg" role="status"></div>
     <button type="button" class="btn ghost sm" id="pinForgot" hidden>PIN भूल गए?</button>
+  </div>
+  <div id="modeBox" class="modeBox">
+    <p class="modeQ">आप कौन हैं?</p>
+    <div class="modeCards">
+      <button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b><small>पढ़ाई, Quiz, Flashcards, Teacher</small></button>
+      <button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b><small>काम, alarm, documents, assistant</small></button>
+    </div>
   </div>
   <button id="startBtn" class="btn primary xl">Piyu को जगाएँ</button>
   <small>एक बार टैप करने से आवाज़ और alarm चालू हो जाएँगे</small>
@@ -58,7 +65,9 @@
         <b>Piyu</b>
         <span id="status">तैयार</span>
       </div>
+      <span id="modeBadge" class="modeBadge" hidden></span>
     </div>
+    <button id="gearBtn" class="gearBtn" type="button" title="Settings" aria-label="Settings" hidden>⚙️</button>
     <div class="clock"><b id="clock">--:--</b><span id="date"></span></div>
   </header>
 
@@ -77,6 +86,13 @@
         <div id="missedList" class="list"></div>
       </div>
     </section>
+
+    <!-- STUDENT MODE -->
+    <section id="tab-shome" class="tab"><div id="sHome"></div></section>
+    <section id="tab-courses" class="tab"><div id="sCourses"></div></section>
+    <section id="tab-quiz" class="tab"><div id="sQuiz"></div></section>
+    <section id="tab-cards" class="tab"><div id="sCards"></div></section>
+    <section id="tab-plan" class="tab"><div id="sPlan"></div></section>
 
     <!-- ALL TASKS -->
     <section id="tab-tasks" class="tab">
@@ -121,6 +137,13 @@
 
     <!-- SETTINGS -->
     <section id="tab-set" class="tab">
+      <div class="card" id="setModeCard">
+        <h3>👤 खाते का प्रकार</h3>
+        <div class="modeCards sm"><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button></div>
+        <label>नाम <input id="setSName" type="text" autocomplete="off" placeholder="आपका नाम"></label>
+        <button class="btn" type="button" id="setSProfile">🎓 Student की पूरी जानकारी बदलें</button>
+        <p class="hint">Student में पढ़ाई के features दिखते हैं (courses, quiz, flashcards, plan); Business में काम और documents वाले। कभी भी बदल सकते हैं।</p>
+      </div>
       <div class="card" id="webCard">
         <h3>🌐 इंटरनेट से खोज — पूरी तरह मुफ़्त</h3>
         <label class="chk"><input type="checkbox" id="setWeb"> जवाब documents/याददाश्त में न मिले तो इंटरनेट से खोजकर बताएँ</label>
@@ -315,10 +338,12 @@
 <script src="store.js"></script>
 <script src="translit.js"></script>
 <script src="voicekit.js"></script>
+<script src="study.js"></script>
 <script src="mind.js"></script>
 <script src="ocr.js"></script>
 <script src="media.js"></script>
 <script src="native.js"></script>
 <script src="app.js"></script>
+<script src="student.js"></script>
 </body>
 </html>

@@ -296,3 +296,16 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - Piper (web + fallback): silence trimmed from every phrase on the server, real pause only at sentence ends, tiny phrases merged, 4 phrases pre-fetched.
 - AI chat prompt: warm, spoken Indian Hindi/Hinglish/Indian English, no markdown/emojis, Indian number/date style.
 - Tests: `t24voice.js` (9). Emulator check: Google hi voices (hia/hic/hid/hie) listed, speech started.
+
+## Feature 24 — Student mode (separate features + design, free, offline)
+- **Account type at login:** Student / Business (start screen; the start button waits for a choice; switch any time in Settings). Student = new navy/blue/gold animated design (aurora, particles, glass cards, running gold+blue lines, radar orb, golden animated start button). Business keeps the original design (+ the gold/blue lines).
+- **Sign-up wizard (5 steps):** name, age, mobile, class/course, board, school, medium, goal, subjects (become courses), weakest subject, study window, daily goal, session length, days, auto mode. Editable later (Settings → Student details).
+- **Courses:** upload PDF/Word/PPT/photo (OCR) → chapters made automatically (by headings, else by size); reader with teacher read-aloud + "explain simply".
+- **Questions (study.js, offline):** 1-mark MCQ (cloze / definition, smart wrong options), 2-mark short, 5-mark explain, 10-mark discuss; question paper builder (sections, total marks, timer, answer key, print/PDF, copy); Auto quiz from weakest topics. Answers checked by keyword + sentence overlap (marks adjustable by the student).
+- **Flashcards:** auto-made from definitions/blanks + one "mistake" card per wrong answer; SM-2 spaced repetition (again/hard/good/easy).
+- **Weakness analysis:** per chapter/subject (recent results count more, flashcard lapses count), missed concepts remembered, remedy steps.
+- **Plan / routine + alarms:** sessions built from weakness × exam closeness inside the student's study window, stored as real tasks (alarms ring, teacher speaks). Mock test the day before an exam. Auto mode re-plans after every quiz.
+- **Teacher voice:** calm, soft, slightly low ("teacher" style, persona); reads questions, feedback, reminders.
+- **Self-learning + memory:** remembers profile, studied/remaining chapters (also sent with AI questions); learns best study hours and completion rate (shifts the plan, lengthens/shortens sessions), weakest question type, turns mistakes into cards.
+- Data: S.courses / S.cards / S.attempts / S.sdays synced like tasks; settings keys s*.
+- Tests: t25study (50), t25ui (39), t25learn (11).
