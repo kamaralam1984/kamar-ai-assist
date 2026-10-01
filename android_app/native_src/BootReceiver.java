@@ -11,6 +11,7 @@ public class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(a) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(a) || "android.intent.action.QUICKBOOT_POWERON".equals(a)) {
             try { PiyuAlarm.rescheduleAll(c); } catch (Exception e) { }
             if (PiyuService.wanted(c)) { try { PiyuService.start(c); } catch (Exception e) { } }
+            if (PiyuFamilyService.wanted(c)) { try { PiyuFamilyService.start(c); } catch (Exception e) { } }
         }
     }
 }

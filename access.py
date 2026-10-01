@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS admin_sessions(hash TEXT PRIMARY KEY, exp INTEGER);
 CREATE TABLE IF NOT EXISTS visitors(ip TEXT PRIMARY KEY, ua TEXT, first INTEGER, last INTEGER, hits INTEGER DEFAULT 0, country TEXT DEFAULT '', cc TEXT DEFAULT '', city TEXT DEFAULT '', path TEXT DEFAULT '');
 """
-FEATURES = ('voice', 'ai', 'web', 'docs', 'student', 'business')
+FEATURES = ('voice', 'ai', 'web', 'docs', 'student', 'business', 'kids')
 EXTRA_COLS = (('features', "TEXT DEFAULT ''"), ('country', "TEXT DEFAULT ''"), ('cc', "TEXT DEFAULT ''"), ('city', "TEXT DEFAULT ''"), ('last_ua', "TEXT DEFAULT ''"), ('first_seen', 'INTEGER'))
 TZ_MIN = int(os.environ.get('PIYU_TZ_MIN', '330'))                      # the day boundary for usage statistics (default: India, UTC+5:30)
 EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,190}\.[A-Za-z]{2,24}$')
@@ -211,7 +211,7 @@ class Access:
         for k, v in (feats or {}).items():
             if k in cur:
                 cur[k] = bool(v)
-        if not cur['student'] and not cur['business']:
+        if not cur['student'] and not cur['business'] and not cur['kids']:
             cur['business'] = True                                     # a user always keeps at least one kind of account
         with self.lock, self._con() as c:
             c.execute('UPDATE users SET features=? WHERE id=?', (json.dumps(cur), uid))

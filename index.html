@@ -8,13 +8,16 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="kids.css">
 </head>
 <body>
 
 <!-- Start screen: browsers need one tap before sound/voice can play -->
 <div id="splash">
   <div class="orb big"><div class="radar" aria-hidden="true"><span class="rg"></span><span class="rg g"></span><span class="rg"></span><span class="sweep"></span><span class="blip b1"></span><span class="blip b2"></span><span class="blip b3"></span></div><i></i><i></i><i></i></div>
-  <h1>Piyu</h1>
+  <h1 id="piyuTitle" class="piyu-gold" aria-label="Piyu">Piyu</h1>
+  <script>(function(){var h=document.getElementById('piyuTitle');if(!h)return;h.innerHTML='Piyu'.split('').map(function(c,i){return '<span class="pl" aria-hidden="true" style="--i:'+i+'">'+c+'</span>'}).join('');
+  var fx=['wave','glow','flip','zoom','swing','blur','jelly','spin'],n=0;function go(){h.setAttribute('data-fx',fx[n++%fx.length])}go();setInterval(go,3200)})()</script>
   <p>आपकी पर्सनल असिस्टेंट</p>
   <div id="loginBox" hidden>
     <input id="loginToken" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Sync token (server से मिला)" hidden>
@@ -28,8 +31,10 @@
     <div class="modeCards">
       <button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b><small>पढ़ाई, Quiz, Flashcards, Teacher</small></button>
       <button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b><small>काम, alarm, documents, assistant</small></button>
+      <button type="button" class="modeCard kid" data-mode="kids"><span class="mi">👶</span><b>Kids</b><small>बच्चों के लिए: रूटीन, सीखना, खेल, कहानी, सुरक्षा</small></button>
     </div>
   </div>
+  <div id="kParentSwitch" class="kps" hidden><span class="kps-name"></span><button type="button" class="btn ghost sm">🔒 खाता बदलें (पैरेंट)</button></div>
   <button id="startBtn" class="btn primary xl">Piyu को जगाएँ</button>
   <small>एक बार टैप करने से आवाज़ और alarm चालू हो जाएँगे</small>
 </div>
@@ -102,6 +107,11 @@
     <section id="tab-quiz" class="tab"><div id="sQuiz"></div></section>
     <section id="tab-cards" class="tab"><div id="sCards"></div></section>
     <section id="tab-plan" class="tab"><div id="sPlan"></div></section>
+    <section id="tab-khome" class="tab"><div id="kHome"></div></section>
+    <section id="tab-klearn" class="tab"><div id="kLearn"></div></section>
+    <section id="tab-kplay" class="tab"><div id="kPlay"></div></section>
+    <section id="tab-kstory" class="tab"><div id="kStory"></div></section>
+    <section id="tab-kstars" class="tab"><div id="kStars"></div></section>
 
     <!-- ALL TASKS -->
     <section id="tab-tasks" class="tab">
@@ -152,10 +162,15 @@
       </div>
       <div class="card" id="setModeCard">
         <h3>👤 खाते का प्रकार</h3>
-        <div class="modeCards sm"><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button></div>
+        <div class="modeCards sm"><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button><button type="button" class="modeCard kid" data-mode="kids"><span class="mi">👶</span><b>Kids</b></button></div>
         <label>नाम <input id="setSName" type="text" autocomplete="off" placeholder="आपका नाम"></label>
         <button class="btn" type="button" id="setSProfile">🎓 Student की पूरी जानकारी बदलें</button>
         <p class="hint">Student में पढ़ाई के features दिखते हैं (courses, quiz, flashcards, plan); Business में काम और documents वाले। कभी भी बदल सकते हैं।</p>
+      </div>
+      <div class="card" id="famRow">
+        <h3>👪 फ़ैमिली — बच्चे की सुरक्षा</h3>
+        <p class="hint">अपने बच्चे के Piyu Kids से जुड़िए: उसका रिपोर्ट, रूटीन, स्कूल पहुँचा/निकला की सूचना और नक़्शा। पूरी तरह मुफ़्त।</p>
+        <button class="btn primary" type="button" id="famBtn">👪 फ़ैमिली खोलें</button>
       </div>
       <div class="card" id="webCard">
         <h3>🌐 इंटरनेट से खोज — पूरी तरह मुफ़्त</h3>
@@ -358,5 +373,10 @@
 <script src="native.js"></script>
 <script src="app.js"></script>
 <script src="student.js"></script>
+<script src="kidsdata.js"></script>
+<script src="kidsmap.js"></script>
+<script src="kids.js"></script>
+<script src="kidsplay.js"></script>
+<script src="kidsparent.js"></script>
 </body>
 </html>

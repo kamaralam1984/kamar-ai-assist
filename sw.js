@@ -1,5 +1,5 @@
 /* Piyu service worker: works offline, but never serves an old app while online. Network first (a 304 is tiny), the cached copy only if the network fails or is slower than 2.5 s. */
-const V = 'piyu-v5', F = ['./', 'index.html', 'style.css', 'core.js', 'store.js', 'mind.js', 'translit.js', 'voicekit.js', 'study.js', 'student.js', 'ocr.js', 'media.js', 'i18n.js', 'native.js', 'app.js', 'icon.svg', 'manifest.webmanifest'];
+const V = 'piyu-v6', F = ['./', 'index.html', 'style.css', 'core.js', 'store.js', 'mind.js', 'translit.js', 'voicekit.js', 'study.js', 'student.js', 'kids.css', 'kidsdata.js', 'kidsmap.js', 'kids.js', 'kidsplay.js', 'kidsparent.js', 'ocr.js', 'media.js', 'i18n.js', 'native.js', 'app.js', 'icon.svg', 'manifest.webmanifest'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(F)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== V).map(x => caches.delete(x)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

@@ -92,7 +92,7 @@ if (!/^[0-9a-f]{32,}$/.test(DEVICE)) { DEVICE = randHex(24); try { localStorage.
 const deviceReady = (async () => { try { if (window.PiyuNative && PiyuNative.isNative && PiyuNative.deviceId) { const id = await PiyuNative.deviceId(); if (id) DEVICE = await sha256hex('piyu-android:' + id); } } catch (e) { } })();
 async function sha256hex(t) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
 const hdrs = () => S.settings.token ? { 'X-Piyu-Token': S.settings.token, 'X-Piyu-Device': DEVICE } : {};
-const DEV_ONLY = ['token', 'pinHash', 'loggedIn', 'serverUrl'];           // belong to this phone only: never sent to the server
+const DEV_ONLY = ['token', 'pinHash', 'loggedIn', 'serverUrl', 'kidPin', 'kidPendingPin'];           // belong to this phone only: never sent to the server
 let knownDocs = null;                      // document ids the server already has (used when the admin switched uploads off)
 const stateOut = () => { const c = Object.assign({}, S); c.settings = Object.assign({}, S.settings); DEV_ONLY.forEach(k => delete c.settings[k]); if (!featOn('docs') && knownDocs) c.docs = (S.docs || []).filter(d => knownDocs.has(d.id)); return c; };
 let ME = {};
@@ -107,8 +107,10 @@ function applyFeatures() {
   const f = ME.features || {};
   document.body.classList.toggle('nodocs', f.docs === false);
   document.querySelectorAll('#modeBox [data-mode],#setModeCard [data-mode]').forEach(b => { b.hidden = f[b.dataset.mode] === false; });
+  const fam = document.getElementById('famRow'); if (fam) fam.hidden = f.kids === false;
   if (window.PiyuStudent) {
-    if (f.student === false && S.settings.mode === 'student') { S.settings.mode = 'business'; save(); PiyuStudent.applyMode(); }
+    if (f.kids === false && S.settings.mode === 'kids') { S.settings.mode = f.business !== false ? 'business' : 'student'; save(); PiyuStudent.applyMode(); }
+    else if (f.student === false && S.settings.mode === 'student') { S.settings.mode = 'business'; save(); PiyuStudent.applyMode(); }
     else if (f.business === false && f.student !== false && S.settings.mode !== 'student' && !$('#app').hidden) { S.settings.mode = 'student'; save(); PiyuStudent.applyMode(); PiyuStudent.onboard(); }
   }
   if (f.voice === false) { voiceBlocked = true; try { stopSpeaking(); } catch (e) { } } else voiceBlocked = false;
@@ -185,7 +187,7 @@ async function checkReg() {
     m.textContent = st === 'pending' ? '⏳ ' + _t('Owner की मंज़ूरी का इंतज़ार है') : (st === 'approved' || st === 'active') ? '✅ ' + _t('Owner ने मंज़ूर कर दिया — उनसे token लेकर ऊपर डालिए') : st === 'revoked' ? '⛔ ' + _t(ACCESS_MSG.revoked) : '';
   } catch (e) { }
 }
-async function loadMe() { try { const r = await fetchT('/api/me', { headers: hdrs(), cache: 'no-store' }, 8000); if (r.ok) { ME = await r.json(); showAdminLink(); applyFeatures(); } } catch (e) { } }
+async function loadMe() { try { const r = await fetchT('/api/me', { headers: hdrs(), cache: 'no-store' }, 8000); if (r.ok) { ME = await r.json(); showAdminLink(); applyFeatures(); if (window.PiyuKidsParent) PiyuKidsParent.boot(); } } catch (e) { } }
 function showAdminLink() { const row = $('#adminRow'); if (!row) return; row.hidden = ME.role !== 'owner'; const a = $('#adminLink'); if (a) { a.href = serverBase() + '/admin'; a.onclick = e => { if (isNativeApp() && PiyuNative.openUrl) { e.preventDefault(); PiyuNative.openUrl(a.href); } }; } }
 $('#reqSend').onclick = requestAccess; $('#reqCheck').onclick = checkReg;
 $('#tokOk').onclick = () => applyToken($('#tokIn').value);
@@ -249,7 +251,7 @@ async function trackBeat(wasVisible) {
   const app = document.getElementById('app'); if (!app || app.hidden) { tLast = Date.now(); return; }
   const now = Date.now(), vis = wasVisible === true || document.visibilityState === 'visible', dt = vis ? Math.min(60, (now - tLast) / 1000) : 0; tLast = now;
   try {
-    const r = await fetch(U('/api/track'), { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), keepalive: true, body: JSON.stringify({ sid: SID, tab: trackTab(), dt: Math.round(dt), vis, mode: S.settings.mode === 'student' ? 'student' : 'business' }) });
+    const r = await fetch(U('/api/track'), { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), keepalive: true, body: JSON.stringify({ sid: SID, tab: trackTab(), dt: Math.round(dt), vis, mode: S.settings.mode === 'student' ? 'student' : S.settings.mode === 'kids' ? 'kids' : 'business' }) });
     if (r.ok) { const j = await r.json(); if (j.announcement !== undefined) showAnnouncement(j.announcement); }
   } catch (e) { }
 }
@@ -400,7 +402,7 @@ function forSpeech(text) {
   return t;
 }
 const learnedDelta = mood => (S.mind && S.mind.on ? PiyuMind.voiceDelta(S.mind, PiyuMind.ctxKey(Date.now(), mood || 'calm')) : null);   // what Piyu has learnt about how you like her voice
-function vparams(mood) { return VK.voiceParams(S.settings.mode === 'student' ? 'teacher' : S.settings.style, mood, S.settings.rate, S.settings.pitchSt, learnedDelta(mood)); }
+function vparams(mood) { return VK.voiceParams(S.settings.mode === 'student' ? 'teacher' : S.settings.mode === 'kids' ? (window.__kidStyle || 'soft') : S.settings.style, mood, S.settings.rate, S.settings.pitchSt, learnedDelta(mood)); }
 const pvFor = lang => lang === 'hi' ? S.settings.pvHi : lang === 'en' ? S.settings.pvEn : (S.settings['pv' + lang[0].toUpperCase() + lang.slice(1)] || '');
 const speechLang = () => SCRIPT[S.settings.lang] ? S.settings.lang : 'en';   // the language Piyu speaks (hi / mr / bn / ur, else English)
 
@@ -579,6 +581,7 @@ const ALERT = 15 * 60000; // ring only if we are within 15 min of the time (page
 const blockedBy = t => C.blockers(t, S.tasks);
 function taskReminderText(t, kind, mins) {
   if (t.study && window.studyReminder) return window.studyReminder(t, kind, mins);
+  if (t.kid && window.kidReminder) return window.kidReminder(t, kind, mins);
   const c = CALL();
   const bl = blockedBy(t)[0];
   if (bl) return kind === 'pre'
@@ -779,6 +782,7 @@ function spawnNext(t) {
 }
 function markDone(t) {
   t.done = true; t.doneAt = Date.now(); ev('done', t.title);
+  if (t.kid && window.PiyuKids) { try { PiyuKids.onDone(t); } catch (e) { console.warn('kid done', e); } }
   const c = spawnNext(t);
   const freed = S.tasks.filter(x => !x.done && (x.dependsOn || []).includes(t.id) && !blockedBy(x).length);
   save(); if (ringState && ringState.t === t) endRing(); render();

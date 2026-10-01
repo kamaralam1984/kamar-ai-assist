@@ -181,7 +181,7 @@ dialog h3{margin-bottom:6px}
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let TOKEN = '', SESS = '', LMODE = 'mail'; try { TOKEN = localStorage.getItem('piyu.admin') || ''; SESS = localStorage.getItem('piyu.adminS') || ''; } catch (e) { }
-const FEATS = { voice: ['🔊', 'Voice / आवाज़'], ai: ['🤖', 'AI जवाब'], web: ['🌐', 'Internet खोज'], docs: ['📄', 'Documents upload'], student: ['🎓', 'Student mode'], business: ['💼', 'Business mode'] };
+const FEATS = { voice: ['🔊', 'Voice / आवाज़'], ai: ['🤖', 'AI जवाब'], web: ['🌐', 'Internet खोज'], docs: ['📄', 'Documents upload'], student: ['🎓', 'Student mode'], business: ['💼', 'Business mode'], kids: ['👶', 'Kids mode'] };
 const TABN = { shome: 'Study home', courses: 'Courses', quiz: 'Quiz', cards: 'Flashcards', plan: 'Plan', chat: 'Chat / Teacher', home: 'Home', tasks: 'काम', docs: 'Docs', prog: 'Progress', set: 'Settings', app: 'App' };
 let tab = 'dash', ST = { ov: null, users: [], cur: null };
 
@@ -308,6 +308,7 @@ function rDash() {
     <div class="card kpi"><span class="ic">⏳</span><b data-n="${o.users.pending}">0</b><span>मंज़ूरी बाकी</span></div>
     <div class="card kpi"><span class="ic">⏱</span><b data-n="${o.today.minutes}">0</b><span>आज के मिनट (सब users)</span></div>
     <div class="card kpi"><span class="ic">🎓</span><b data-n="${o.users.students}">0</b><span>Students</span></div>
+    <div class="card kpi"><span class="ic">👶</span><b data-n="${o.users.kids || 0}">0</b><span>Kids</span></div>
     <div class="card kpi"><span class="ic">💼</span><b data-n="${o.users.business}">0</b><span>Business</span></div>
     <div class="card kpi ${o.visitors.length ? 'gold' : ''}" style="cursor:pointer" onclick="document.querySelector('[data-t=users]').click()"><span class="ic">🚪</span><b data-n="${o.visitors.length}">0</b><span>बिना token के devices</span></div>
   </div>
@@ -352,7 +353,8 @@ function fillUsers() {
   const vc = $('#visClr'); if (vc) vc.onclick = async () => { await api('/api/admin/visitors/clear', { json: {} }); toast('साफ़ हो गया'); refresh(); };
   const us = ST.users.filter(u => (uf === 'all' || uf === u.status || uf === u.mode || (uf === 'online' && u.online)) && (!uq || [u.name, u.phone, u.country, u.city, u.student && u.student.name].join(' ').toLowerCase().includes(uq)));
   $('#ulist').innerHTML = us.length ? us.map((u, i) => `<div class="card uc" data-id="${u.id}" style="animation-delay:${Math.min(i, 12) * 45}ms"><div class="top"><div class="av">${esc((u.name || '?')[0].toUpperCase())}<span class="dot ${u.online ? 'on' : ''}"></span></div><div style="flex:1;min-width:0"><h4>${esc(u.name)}</h4><small style="color:var(--mut)">${esc(u.phone || 'फ़ोन नहीं')}</small></div><span class="pill ${esc(u.status)}">${esc(u.status)}</span></div>
-    <div class="meta"><span class="pill ${esc(u.mode)}">${u.mode === 'student' ? '🎓 student' : '💼 business'}</span><span class="pill">${flag(u.cc)} ${esc(place(u))}</span><span class="pill">⏱ ${u.minutes7} min/हफ़्ता</span></div>
+    <div class="meta"><span class="pill ${esc(u.mode)}">${u.mode === 'student' ? '🎓 student' : u.mode === 'kids' ? '👶 kids' : '💼 business'}</span><span class="pill">${flag(u.cc)} ${esc(place(u))}</span><span class="pill">⏱ ${u.minutes7} min/हफ़्ता</span></div>
+    ${u.kids ? `<div class="st">👶 ${esc(u.kids.name)} · ${esc(u.kids.age)} · ${esc(u.kids.cls || '')} · 📍 location ${u.kids.location ? 'ON' : 'OFF'} · 👪 ${u.kids.parents}</div>` : ''}
     ${u.student ? `<div class="st">🎓 ${esc(u.student.class || '')} · ${u.student.studied}/${u.student.chapters} chapters · quiz ${u.student.quizAvg == null ? '—' : u.student.quizAvg + '%'} · 🔥${u.student.streak}</div>` : ''}
     <div style="color:var(--mut);font-size:11.5px;margin-top:8px">आख़िरी बार: ${u.online ? '<b style="color:var(--ok)">अभी online</b>' : ago(u.lastSeen)}</div></div>`).join('') : '<div class="empty">कोई user नहीं मिला</div>';
 }

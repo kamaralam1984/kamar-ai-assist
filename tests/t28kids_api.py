@@ -1,0 +1,72 @@
+"""HTTP API of Kids mode: starts a real server on a temp data dir and drives /api/kids/* and /api/family/*."""
+import json, os, subprocess, sys, tempfile, time, urllib.request, urllib.error
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
+os.environ['PIYU_GEOIP'] = '0'
+from access import Access
+D = tempfile.mkdtemp(); A = Access(D)
+kid, mom, stranger = A.add('Kid'), A.add('Mom'), A.add('Stranger')
+PORT = 18000 + os.getpid() % 1000
+env = dict(os.environ, PIYU_DATA=D, PIYU_PORT=str(PORT), PIYU_TOKEN='owner-secret-token-for-test-1234567890', PIYU_HOST='127.0.0.1', PIYU_GEOIP='0')
+srv = subprocess.Popen([sys.executable, os.path.join(ROOT, 'server.py')], env=env, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+ok = bad = 0
+def chk(n, c):
+    global ok, bad
+    if c: ok += 1
+    else: bad += 1; print('FAIL', n)
+def call(u, method, path, body=None):
+    r = urllib.request.Request('http://127.0.0.1:%d%s' % (PORT, path), method=method, data=None if body is None else json.dumps(body).encode(),
+                               headers={'X-Piyu-Token': u['token'], 'X-Piyu-Device': 'device-id-for-' + u['name'] + '-test', 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(r, timeout=10) as f: return f.status, json.loads(f.read() or b'{}')
+    except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b'{}')
+try:
+    for _ in range(60):
+        try: urllib.request.urlopen('http://127.0.0.1:%d/' % PORT, timeout=1); break
+        except Exception: time.sleep(0.5)
+    s, r = call(kid, 'GET', '/api/kids/me'); chk('me empty', s == 200 and r['profile'] is None)
+    s, r = call(kid, 'POST', '/api/kids/profile', {'name': 'Rani', 'age': 8, 'cls': '3', 'avatar': '🦁', 'newPin': '12'}); chk('bad pin 400', s == 400)
+    s, r = call(kid, 'POST', '/api/kids/profile', {'name': 'Rani', 'age': 8, 'cls': '3', 'avatar': '🦁', 'newPin': '1234'}); chk('sign-up', s == 200 and r['profile']['name'] == 'Rani')
+    s, r = call(kid, 'POST', '/api/kids/profile', {'name': 'Hack', 'age': 8}); chk('edit needs PIN', s == 403)
+    s, r = call(kid, 'POST', '/api/kids/config', {'pin': '0000', 'config': {'limit_min': 30}}); chk('config wrong pin', s == 403)
+    s, r = call(kid, 'POST', '/api/kids/config', {'pin': '1234', 'config': {'limit_min': 30, 'places': [{'id': 'home', 'name': 'Ghar', 'type': 'home', 'lat': 28.6, 'lng': 77.2, 'r': 100}]}}); chk('config ok', s == 200 and r['config']['limit_min'] == 30)
+    s, r = call(kid, 'POST', '/api/kids/loc', {'lat': 28.6, 'lng': 77.2}); chk('loc without consent 403', s == 403 and r['why'] == 'consent')
+    s, r = call(kid, 'POST', '/api/kids/consent', {'pin': '1234', 'on': True}); chk('consent', s == 200 and r['profile']['consent'] == 1)
+    s, r = call(kid, 'POST', '/api/kids/loc', {'lat': 28.6, 'lng': 77.2, 'acc': 10}); chk('loc ok', s == 200)
+    s, r = call(kid, 'POST', '/api/kids/events', {'events': [{'kind': 'star', 'data': {'n': 2}}, {'kind': 'zzz'}]}); chk('events', s == 200 and r['n'] == 1)
+    s, r = call(kid, 'POST', '/api/kids/code', {'pin': '1234'}); code = r.get('code'); chk('link code', s == 200 and len(code or '') == 6)
+    s, r = call(stranger, 'GET', '/api/family/child/%d' % 1); chk('stranger blocked', s == 403)
+    s, r = call(mom, 'POST', '/api/family/link', {'code': '999999'}); chk('bad code', s == 400)
+    s, r = call(mom, 'POST', '/api/family/link', {'code': code}); chk('parent links', s == 200 and r['child']['profile']['name'] == 'Rani' if 'profile' in r.get('child', {}) else s == 200)
+    s, r = call(mom, 'GET', '/api/family/children'); chk('children list', s == 200 and len(r['children']) == 1)
+    cid = kid['id']
+    s, r = call(mom, 'GET', '/api/family/child/%d' % cid); chk('child panel', s == 200 and r['config']['limit_min'] == 30 and len(r['locs']) == 1)
+    s, r = call(mom, 'POST', '/api/family/child/%d/config' % cid, {'config': {'limit_min': 45}}); chk('parent edits config', s == 200 and r['config']['limit_min'] == 45)
+    s, r = call(kid, 'POST', '/api/kids/sos', {'lat': 28.6, 'lng': 77.2}); chk('sos', s == 200 and r['parents'] == 1)
+    s, r = call(kid, 'POST', '/api/kids/checkin', {'key': 'home'}); chk('checkin', s == 200)
+    s, r = call(kid, 'POST', '/api/kids/checkin', {'key': 'bad'}); chk('bad checkin', s == 400)
+    s, r = call(mom, 'GET', '/api/family/alerts'); kinds = [a['kind'] for a in r['alerts']]; chk('alerts sos+checkin', s == 200 and 'sos' in kinds and 'checkin' in kinds)
+    s, r = call(mom, 'GET', '/api/family/alerts?since=%d' % r['alerts'][0]['id']); chk('alerts since', s == 200 and r['alerts'] == [])
+    s, r = call(mom, 'POST', '/api/family/msg', {'child': cid, 'text': 'Jaldi aao'}); chk('parent msg', s == 200)
+    s, r = call(stranger, 'POST', '/api/family/msg', {'child': cid, 'text': 'hi'}); chk('stranger msg refused', s == 403)
+    s, r = call(kid, 'GET', '/api/kids/msgs?since=0'); chk('child gets msg', s == 200 and r['msgs'][0]['text'] == 'Jaldi aao')
+    s, r = call(mom, 'POST', '/api/family/pos', {'on': True, 'lat': 28.61, 'lng': 77.21}); chk('parent pos', s == 200)
+    s, r = call(mom, 'POST', '/api/family/child/%d/consent' % cid, {'on': False}); chk('parent turns location off', s == 200)
+    s, r = call(kid, 'POST', '/api/kids/loc', {'lat': 28.6, 'lng': 77.2}); chk('loc blocked after off', s == 403)
+    s, r = call(kid, 'POST', '/api/kids/panel', {'pin': '1234'}); chk('child panel via pin', s == 200 and 'report' in r)
+    s, r = call(kid, 'POST', '/api/kids/export', {'pin': '1234'}); chk('export', s == 200)
+    for _ in range(6): s, r = call(kid, 'POST', '/api/kids/verify', {'pin': '0000'})
+    chk('pin lock 429', s == 429)
+    s, r = call(kid, 'POST', '/api/kids/delete', {'pin': '1234'}); chk('locked even for right pin', s == 429)
+    s, r = call(mom, 'POST', '/api/family/child/%d/unlink' % cid, {}); chk('unlink', s == 200)
+    s, r = call(mom, 'GET', '/api/family/child/%d' % cid); chk('after unlink 403', s == 403)
+    # ---- review regressions
+    s, r = call(mom, 'GET', '/api/family/child/%d?hours=nan' % cid); chk('hours=nan no 500', s == 403)       # unlinked now
+    s, r = call(mom, 'POST', '/api/family/msg', {'child': 'abc', 'text': 'x'}); chk('msg bad child no 500', s == 403)
+    for _ in range(6): s, r = call(stranger, 'POST', '/api/family/link', {'code': '000001'})
+    chk('link brute force limited', s == 429)
+    s, r = call(stranger, 'POST', '/api/ai/chat', {'q': 'hi', 'kid': True}); chk('kid ai w/o profile no 500', s in (200, 503))
+finally:
+    srv.terminate()
+    try: srv.wait(5)
+    except Exception: srv.kill()
+print('t28kids_api: %d ok, %d failed' % (ok, bad)); sys.exit(1 if bad else 0)

@@ -92,7 +92,7 @@
   /* name: mic | camera | notif | exact | battery | volume  -> the system asks the user; returns the new status */
   N.ask = async name => {
     try {
-      if (name === 'mic' || name === 'camera') await BG.permRequest({ name });
+      if (name === 'mic' || name === 'camera' || name === 'loc' || name === 'bgloc') await BG.permRequest({ name });
       else if (name === 'notif') await LN.requestPermissions();
       else if (name === 'exact') { if (LN.changeExactNotificationSetting) await LN.changeExactNotificationSetting(); }
       else if (name === 'lock') await N.openFullScreenSettings();
@@ -101,6 +101,12 @@
     } catch (e) { N.lastError = String(e && e.message || e); }
     return N.perms();
   };
+  /* ---- Piyu Family: child location sharing (only while the parent has it ON) and parent alerts, in a foreground service that also runs with the app closed ---- */
+  N.famAvail = !!(BG && BG.famStart);
+  N.famStart = async o => { if (!N.famAvail) return null; try { return await BG.famStart(o || {}); } catch (e) { N.lastError = String(e && e.message || e); return null; } };
+  N.famStop = async () => { if (!N.famAvail) return null; try { return await BG.famStop(); } catch (e) { return null; } };
+  N.famStatus = async () => { if (!N.famAvail) return null; try { return await BG.famStatus(); } catch (e) { return null; } };
+  N.locOnce = async () => { if (!BG || !BG.locOnce) return null; try { return await BG.locOnce(); } catch (e) { return null; } };
   N.openSettings = async () => { if (BG) { try { await BG.openAppSettings(); } catch (e) { } } };
 
   /* ---- the phone's own speech recognition (no browser speech API exists inside an Android WebView) ---- */

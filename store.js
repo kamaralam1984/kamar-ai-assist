@@ -4,7 +4,7 @@
   const DB = 'piyu', VER = 1;
   let dbp = null;
   const LISTS = [['tasks', 'task'], ['docs', 'doc'], ['facts', 'fact'], ['episodes', 'ep'], ['days', 'day'], ['kb', 'kb'], ['courses', 'course'], ['cards', 'card'], ['attempts', 'att'], ['sdays', 'sday']];
-  const DEVICE_KEYS = ['voiceHi', 'voiceEn', 'token', 'wake', 'wakeOn', 'serverUrl', 'loggedIn', 'pinHash'];
+  const DEVICE_KEYS = ['voiceHi', 'voiceEn', 'token', 'wake', 'wakeOn', 'serverUrl', 'loggedIn', 'pinHash', 'kidPin', 'kidPendingPin'];
 
   function open() {
     if (dbp) return dbp;

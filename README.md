@@ -58,3 +58,16 @@ The container is read-only, runs as a non-root user with all capabilities droppe
 
 ## Admin panel
 Open `/admin` and enter the owner token (`PIYU_TOKEN`). Create/approve users, set or change passwords, switch features on/off per user, see who is online and from which country, how long each user stayed on each page, student progress, server health, security events and the audit log. `PIYU_GEOIP=0` turns the country lookup off; `PIYU_TZ_MIN` sets the day boundary (default 330 = India).
+
+## Kids mode (bachchon ke liye, free)
+Start screen par **👶 Kids** chuniye. Mata-pita 2 minute me setup karte hain: bachche ka naam / umar / class / avatar, 4 ank ka **Parent PIN**, aur (chahein to) 📍 location safety.
+
+- **Aaj**: roz ka routine (uthna, brush, school, homework, khel, so jao) alarm + halki awaaz ke saath; "ho gaya" par ⭐ star, level, streak, badge, avatar sajana (sirf stars se, paisa nahi).
+- **Seekho** (11 paath + speak-and-check + quiz), **Khelo** (9 chhote khel), **Kahani** (8 kahaniyan, awaaz me, saath me shabd chamakte hain), **Homework photo** (OCR + safe local AI).
+- **Parent panel** (PIN ke peeche): report, 7 din ka chart, kamzor topic, routine / time limit / bedtime lock badalna, message, data export / delete.
+- **Family** (Settings → Family): apne phone se bachche ko 6 ank ke code se jodein; report, alerts ("school pahuncha / nikla", late, location band, 🆘 SOS) aur naksha apne phone par.
+- **Naksha** free: built-in radar (bina internet) ya OpenStreetMap (sirf tab load hota hai jab parent map khole).
+- **Privacy**: location sirf parent ki sahmati se, bachche ki screen par hamesha "📍 location chalu" dikhta hai, sirf parent dekh sakta hai (Admin ko sirf on/off), 7 din baad apne-aap mit jaati hai. Bachche ke liye chat / links / khula internet nahi; AI sirf padhai-kahani.
+- **Admin**: Kids ko `kids` switch se on/off kar sakte hain.
+- Android (naya APK chahiye): `PiyuFamilyService` location bhejti hai (sirf sahmati ON hone par) aur parent ke phone par alerts laati hai, app band hone par bhi.
+- Tests: `t28kids_py.py`, `t28kids_api.py`, `t28kids_ui*.js`, `t28kids_fam.js`.

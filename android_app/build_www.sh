@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"; SRC=..
 rm -rf www; mkdir -p www/vendor/ocr/lang
-for f in index.html style.css app.js core.js store.js ocr.js translit.js voicekit.js study.js student.js mind.js media.js i18n.js native.js manifest.webmanifest icon.svg; do cp "$SRC/$f" "www/$f"; done
+for f in index.html style.css app.js core.js store.js ocr.js translit.js voicekit.js study.js student.js kids.css kidsdata.js kidsmap.js kids.js kidsplay.js kidsparent.js mind.js media.js i18n.js native.js manifest.webmanifest icon.svg; do cp "$SRC/$f" "www/$f"; done
 mkdir -p www/i18n; cp "$SRC"/i18n/pack.*.js www/i18n/
 cp "$SRC/vendor/pdf.min.mjs" "$SRC/vendor/pdf.worker.min.mjs" www/vendor/
 cp "$SRC"/vendor/ocr/*.js www/vendor/ocr/ ; cp "$SRC"/vendor/ocr/lang/* www/vendor/ocr/lang/

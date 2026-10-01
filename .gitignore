@@ -19,3 +19,4 @@ _imp/
 _h.pdf
 finetune/dataset.jsonl
 finetune/state.json
+tests/*.png

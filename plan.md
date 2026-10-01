@@ -333,7 +333,7 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - **Admin panel languages**: the panel itself can be switched to en / bn / mr / ur (`i18n/admin.js`, phrase-level translator, RTL for Urdu); remembered per browser.
 - Tests: t27pdf (14), t27pdfapp (9), t27lang (13), t27admlang (9).
 
-## PLAN — Feature 28: Kids mode (not built yet)
+## Feature 28 — Kids mode (built; this section was the plan, the status list is at the end)
 All free: no paid API, no push service, no map subscription.
 
 ### Sign-up (parent)
@@ -361,3 +361,22 @@ No chat, no open internet, no external links; AI answers only study/story questi
 
 ### Build order
 1 sign-up + parent PIN → 2 routine + stars + avatar → 3 parent panel/report → 4 safe places + arrived/left alerts + SOS (+APK) → 5 map (radar then OSM) → 6 Seekho / Khelo / Kahani.
+
+
+### Built — where everything lives (Feature 28)
+| Part | Files |
+|---|---|
+| Server: child profile, Parent PIN (PBKDF2, 5 wrong tries lock 10 min), routine/limits/places config, progress events, geofence (arrive/leave with 30 % hysteresis, no flapping, first fix silent), late-home, school-not-reached, location-off alerts, SOS, check-ins, parent messages, family link by 6-digit code (15 min, single use), 7-day location / 60-day event / 30-day alert purge, safe kid-AI prompt | `kids.py`, `server.py` (`/api/kids/*`, `/api/family/*`, `kid_messages`), `access.py` (`kids` feature flag) |
+| Child app: sign-up wizard (5 steps), Aaj (routine alarms through the normal alarm engine, stars, level, streak, check-ins), Mere Stars (avatar shop paid in stars only, 13 badges, 14-day calendar), Parent PIN pad, daily time limit + bedtime lock, SOS (5 s countdown, location, call parent), always-visible "location ON" badge | `kids.js`, `kids.css`, `student.js` (mode glue) |
+| Learning: 11 lessons (Hindi letters, ABC, 1–20, tables, colours, shapes, animals, fruit, body, days, habits) with speak-and-check and 5-question quiz; 9 games; 8 stories read aloud with moving words + moral + 2 questions; homework photo → OCR → safe local AI | `kidsplay.js`, `kidsdata.js` |
+| Parent: panel (report, 7-day chart, weak spots, safety + map, routine editor, limits, messages, settings, export / delete), Family screen on the parent's own phone, alert polling | `kidsparent.js` |
+| Map: built-in radar (works offline) and OpenStreetMap tiles (own small slippy-map code, "© OpenStreetMap contributors", tiles only while a parent has the map open) | `kidsmap.js` |
+| Android: foreground service `PiyuFamilyService` (child: location every 1–10 min only while the parent has sharing ON, notification "Location sharing ON"; parent: alert polling every minute, SOS channel with alarm sound; child: parent's messages), plugin methods `famStart/famStop/famStatus/locOnce`, location permissions | `android_app/native_src/PiyuFamilyService.java`, `PiyuBackgroundPlugin.java`, `patch_android.py`, `native.js` |
+| Admin | card shows Kids profile + whether location is ON (never where the child is); feature switch `kids`; Kids user count |
+| Tests (all in `tests/`, python, each starts its own server on a temp data dir) | `t28kids_py.py` (server logic, 56 checks), `t28kids_api.py` (HTTP, 38), `t28kids_ui.py` (sign-up → home → tabs, 15), `t28kids_ui2.py` (lessons, games, stories, shop, PIN, lock), `t28kids_parent.py` (Family screen, parent panel, alerts, radar + OSM map, 60) |
+
+**Review after building (2026-10-01):** a security pass fixed 13 things in `kids.py` / `server.py`: PIN-lock race (parallel guesses), family-code brute force (per-parent + server-wide limit), location no longer returned or kept once consent is off, other parent's position leak, unlink / delete now remove the parent's alerts and messages, event flood cap, 500s from junk input, kid-AI prompt used even without a profile. Android: boot-time start falls back to a data-sync service on Android 14, listener released when location sharing stops.
+Known limits: `kid:true` for the kid-AI is sent by the app (a child crafting requests by hand could skip it); the kid prompt is best-effort on a small local model; PIN-lock and link-limit counters reset when the server restarts; the older regression suites (`scratchpad/regress.sh`) were not re-run this time.
+
+## Piyu title
+Start-screen title is golden with a moving shine and a new letter animation every ~3 s (wave, glow, flip, zoom, swing, blur, jelly, spin); off when the phone asks for reduced motion.

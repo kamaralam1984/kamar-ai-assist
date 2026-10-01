@@ -5,6 +5,7 @@
   const SY = window.PiyuStudy;
   const DAYMS = 864e5;
   const isStu = () => S.settings.mode === 'student';
+  const isKid = () => S.settings.mode === 'kids';
   const pad2 = n => String(n).padStart(2, '0');
   const dkey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
   const el = id => document.getElementById(id);
@@ -119,22 +120,24 @@
   /* ---------------- account type (Student / Business) ---------------- */
   function buildNav() {
     const nav = document.querySelector('nav'); if (!nav) return;
-    const items = isStu() ? [['shome', '🎓', _t('पढ़ाई')], ['courses', '📚', _t('कोर्स')], ['quiz', '📝', _t('Quiz')], ['cards', '🃏', _t('Cards')], ['plan', '🗓', _t('प्लान')], ['chat', '💬', _t('Teacher')]]
+    const items = isKid() && window.PiyuKids ? PiyuKids.navItems() : isStu() ? [['shome', '🎓', _t('पढ़ाई')], ['courses', '📚', _t('कोर्स')], ['quiz', '📝', _t('Quiz')], ['cards', '🃏', _t('Cards')], ['plan', '🗓', _t('प्लान')], ['chat', '💬', _t('Teacher')]]
       : [['home', '🏠', 'Home'], ['tasks', '✅', _t('काम')], ['docs', '📄', 'Docs'], ['chat', '💬', 'Piyu'], ['prog', '📊', _t('प्रगति')], ['set', '⚙️', 'Settings']];
     const cur = (document.querySelector('.tab.active') || {}).id; const act = cur ? cur.replace('tab-', '') : '';
     nav.innerHTML = items.map(([id, ic, tx]) => `<button data-tab="${id}" class="${id === act ? 'on' : ''}"><i>${ic}</i>${esc(tx)}</button>`).join('');
     if (typeof goldPlace === 'function') setTimeout(goldPlace, 30);
   }
   function applyMode() {
-    const m = S.settings.mode === 'student' ? 'student' : 'business';
+    const was = document.body.dataset.mode, m = S.settings.mode === 'student' ? 'student' : S.settings.mode === 'kids' && window.PiyuKids ? 'kids' : 'business';
     document.body.dataset.mode = m; ensure();
-    const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = m === 'student' ? '#06112b' : '#0b0a1a';
+    const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = m === 'student' ? '#06112b' : m === 'kids' ? '#2a1458' : '#0b0a1a';
     const wasStu = (document.querySelector('.tab.active') || {}).id; buildNav();
-    const b = el('modeBadge'); if (b) { b.textContent = m === 'student' ? '🎓 ' + _t('Student') : ''; b.hidden = m !== 'student'; }
+    const b = el('modeBadge'); if (b) { b.textContent = m === 'student' ? '🎓 ' + _t('Student') : m === 'kids' ? '👶 ' + _t('Kids') : ''; b.hidden = m === 'business'; }
     const g = el('gearBtn'); if (g) g.hidden = m !== 'student';
-    mountFX();
-    const inStuTab = /^tab-(shome|courses|quiz|cards|plan)$/.test(wasStu || ''), inBizTab = /^tab-(home|tasks|docs|prog|set)$/.test(wasStu || '');
-    if (m === 'student' && (!wasStu || inBizTab && wasStu !== 'tab-set')) goTab('shome'); else if (m === 'business' && (!wasStu || inStuTab)) goTab('home'); else goTab((wasStu || 'tab-home').replace('tab-', ''));
+    if (m === 'student') mountFX();
+    if (m !== 'kids' && window.PiyuKids && was === 'kids') PiyuKids.leave();
+    const inStuTab = /^tab-(shome|courses|quiz|cards|plan)$/.test(wasStu || ''), inBizTab = /^tab-(home|tasks|docs|prog|set)$/.test(wasStu || ''), inKidTab = /^tab-(khome|klearn|kplay|kstory|kstars)$/.test(wasStu || '');
+    if (m === 'kids') { PiyuKids.enter(); if (!inKidTab) goTab('khome'); else goTab(wasStu.replace('tab-', '')); }
+    else if (m === 'student' && (!wasStu || inBizTab && wasStu !== 'tab-set' || inKidTab)) goTab('shome'); else if (m === 'business' && (!wasStu || inStuTab || inKidTab)) goTab('home'); else goTab((wasStu || 'tab-home').replace('tab-', ''));
     refreshModeUI();
   }
   function chooseMode(m) {
@@ -151,15 +154,17 @@
   /* the start button asks for a type first (tests set window.__PIYU_TEST_MODE) */
   function ensureMode() {
     if (S.settings.mode) return true;
-    if (window.__PIYU_TEST_MODE) { if (window.__PIYU_TEST_MODE === 'student') S.settings.mode = 'student'; return true; }      // tests only (Business = nothing stored, as before)
+    if (window.__PIYU_TEST_MODE) { if (window.__PIYU_TEST_MODE === 'student') S.settings.mode = 'student'; else if (window.__PIYU_TEST_MODE === 'kids') S.settings.mode = 'kids'; return true; }      // tests only (Business = nothing stored, as before)
     const b = el('modeBox'); if (b) { b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
-    toast(_t('पहले चुनिए: Student या Business')); return false;
+    toast(_t('पहले चुनिए: Student, Business या Kids')); return false;
   }
   /* the chooser on the start screen is shown until one type has been picked */
   function loginUI() {
     const box = el('modeBox'); if (!box) return;
-    box.hidden = !!S.settings.mode && el('app') && !el('app').hidden; refreshModeUI();
-    document.body.dataset.mode = S.settings.mode === 'student' ? 'student' : 'business';
+    const kidReady = S.settings.mode === 'kids' && window.PiyuKids && PiyuKids.K().ready, sw = el('kParentSwitch');
+    box.hidden = (!!S.settings.mode && el('app') && !el('app').hidden) || (kidReady && !window.__kidsChooser); refreshModeUI();
+    if (sw) { sw.hidden = !kidReady || !!window.__kidsChooser; const t = sw.querySelector('.kps-name'); if (t && kidReady) t.textContent = '👶 ' + (PiyuKids.K().name || ''); }
+    document.body.dataset.mode = S.settings.mode === 'student' ? 'student' : (S.settings.mode === 'kids' && window.PiyuKids ? 'kids' : 'business');
     if (S.settings.mode === 'student') mountFX();
   }
 
@@ -769,19 +774,21 @@
   document.addEventListener('click', e => {                       // sign-up type chooser (start screen + Settings)
     const m = e.target.closest('[data-mode]'); if (!m || !m.dataset.mode || !m.closest('#modeBox,#setModeCard')) return;
     const was = S.settings.mode; chooseMode(m.dataset.mode);
-    if (!el('app').hidden) { applyMode(); if (m.dataset.mode === 'student') onboard(); }
-    else { document.body.dataset.mode = m.dataset.mode; if (m.dataset.mode === 'student') mountFX(); }
+    if (!el('app').hidden) { applyMode(); if (m.dataset.mode === 'student') onboard(); else if (m.dataset.mode === 'kids' && window.PiyuKids) { PiyuKids.prev = was; PiyuKids.onboard(); } }
+    else { document.body.dataset.mode = m.dataset.mode; if (m.dataset.mode === 'student') mountFX(); if (m.dataset.mode === 'kids' && window.PiyuKids) PiyuKids.prev = was; }
   });
+  document.addEventListener('click', e => { if (!e.target.closest('#kParentSwitch button') || !window.PiyuKids) return; PiyuKids.askPin(_t('पैरेंट PIN डालिए'), () => { window.__kidsChooser = true; loginUI(); }); });
   document.addEventListener('input', e => { if (e.target.id === 'setSName') { S.settings.sname = e.target.value.trim(); save(); } });
   document.addEventListener('click', e => { if (e.target.id === 'gearBtn' || e.target.closest('#gearBtn')) goTab('set'); if (e.target.id === 'setSProfile') openSignup(true); });
 
   /* ---------------- glue with app.js ---------------- */
   function refreshAll() { renderSHome(); renderCourses(); renderQuizHome(); renderCards(); renderPlan(); }
   function onTab(n) {
+    if (isKid() && window.PiyuKids) { PiyuKids.onTab(n); return; }
     if (!isStu()) return;
     if (n === 'shome') renderSHome(); else if (n === 'courses') renderCourses(); else if (n === 'quiz') renderQuizHome(); else if (n === 'cards') renderCards(); else if (n === 'plan') renderPlan();
   }
-  function rerender() { if (isStu()) { buildNav(); const a = (document.querySelector('.tab.active') || {}).id; if (a) onTab(a.replace('tab-', '')); } refreshModeUI(); }
-  window.PiyuStudent = { ensureMode, applyMode, chooseMode, loginUI, onboard, onTab, rerender, autoTick, isStu, openSignup, studentMemory, makePlan, startQuiz, startCards, QS };
+  function rerender() { if (isKid() && window.PiyuKids) { buildNav(); const a = (document.querySelector('.tab.active') || {}).id; if (a) onTab(a.replace('tab-', '')); if (window.PiyuKidsParent) PiyuKidsParent.redraw(); PiyuKids.renderAll(); } else if (isStu()) { buildNav(); const a = (document.querySelector('.tab.active') || {}).id; if (a) onTab(a.replace('tab-', '')); } refreshModeUI(); }
+  window.PiyuStudent = { fx: { confetti, countUp, ring, animateRings, bar }, ensureMode, applyMode, chooseMode, loginUI, onboard, onTab, rerender, autoTick, isStu, openSignup, studentMemory, makePlan, startQuiz, startCards, QS };
   storeReady.then(() => { ensure(); loginUI(); });
 })();

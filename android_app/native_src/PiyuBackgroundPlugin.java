@@ -36,7 +36,9 @@ import java.util.Set;
     name = "PiyuBackground",
     permissions = {
         @Permission(alias = "mic", strings = { Manifest.permission.RECORD_AUDIO }),
-        @Permission(alias = "camera", strings = { Manifest.permission.CAMERA })
+        @Permission(alias = "camera", strings = { Manifest.permission.CAMERA }),
+        @Permission(alias = "loc", strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }),
+        @Permission(alias = "bgloc", strings = { "android.permission.ACCESS_BACKGROUND_LOCATION" })
     }
 )
 public class PiyuBackgroundPlugin extends Plugin {
@@ -190,7 +192,8 @@ public class PiyuBackgroundPlugin extends Plugin {
     /** ask for one permission by name: "mic" | "camera" (system dialog) — battery is a settings screen — returns the new status */
     @PluginMethod public void permRequest(PluginCall call) {
         String n = call.getString("name", "");
-        if ("mic".equals(n) || "camera".equals(n)) {
+        if ("mic".equals(n) || "camera".equals(n) || "loc".equals(n) || "bgloc".equals(n)) {
+            if ("bgloc".equals(n) && Build.VERSION.SDK_INT < 29) { call.resolve(perms()); return; }
             if (getPermissionState(n) == PermissionState.GRANTED) { call.resolve(perms()); return; }
             requestPermissionForAlias(n, call, "permDone");
             return;
@@ -298,10 +301,80 @@ public class PiyuBackgroundPlugin extends Plugin {
         return o;
     }
     private String st(String alias) { PermissionState s = getPermissionState(alias); return s == PermissionState.GRANTED ? "granted" : s == PermissionState.DENIED ? "denied" : "prompt"; }
+    /* ---------------- Piyu Family: child location sharing (only while the parent has it ON) + parent alerts ---------------- */
+    /** { server, token, device, loc: bool, alerts: bool, every: minutes, since: lastAlertId, texts } — saves what the service needs and starts / stops it */
+    @PluginMethod public void famStart(PluginCall call) {
+        Context c = getContext();
+        android.content.SharedPreferences.Editor e = PiyuFamilyService.prefs(c).edit();
+        e.putString("server", call.getString("server", "")).putString("token", call.getString("token", "")).putString("device", call.getString("device", ""))
+         .putBoolean("loc", Boolean.TRUE.equals(call.getBoolean("loc", false))).putBoolean("alerts", Boolean.TRUE.equals(call.getBoolean("alerts", false)))
+         .putInt("every", Math.max(1, Math.min(10, call.getInt("every", 2))));
+        if (call.hasOption("since")) e.putLong("since", call.getData().optLong("since", 0));
+        if (call.hasOption("msgSince")) e.putLong("msgSince", call.getData().optLong("msgSince", 0));
+        if (call.hasOption("locTitle")) e.putString("locTitle", call.getString("locTitle", ""));
+        if (call.hasOption("locText")) e.putString("locText", call.getString("locText", ""));
+        if (call.hasOption("famTitle")) e.putString("famTitle", call.getString("famTitle", ""));
+        if (call.hasOption("famText")) e.putString("famText", call.getString("famText", ""));
+        if (call.hasOption("msgTitle")) e.putString("msgTitle", call.getString("msgTitle", ""));
+        e.putString("err", "").apply();
+        if (PiyuFamilyService.wanted(c)) { try { PiyuFamilyService.start(c); } catch (Exception ex) { call.reject(String.valueOf(ex.getMessage())); return; } }
+        else c.stopService(new Intent(c, PiyuFamilyService.class));
+        call.resolve(famState());
+    }
+    @PluginMethod public void famStop(PluginCall call) {
+        Context c = getContext();
+        PiyuFamilyService.prefs(c).edit().putBoolean("loc", false).putBoolean("alerts", false).apply();
+        c.stopService(new Intent(c, PiyuFamilyService.class));
+        call.resolve(famState());
+    }
+    @PluginMethod public void famStatus(PluginCall call) { call.resolve(famState()); }
+    private JSObject famState() {
+        android.content.SharedPreferences p = PiyuFamilyService.prefs(getContext());
+        JSObject o = new JSObject();
+        o.put("loc", p.getBoolean("loc", false)); o.put("alerts", p.getBoolean("alerts", false)); o.put("lastPost", p.getLong("lastPost", 0)); o.put("lastCode", p.getInt("lastCode", 0));
+        o.put("err", p.getString("err", "")); o.put("since", p.getLong("since", 0));
+        try { android.location.LocationManager lm = (android.location.LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE); o.put("gpsOn", lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)); } catch (Exception e) { o.put("gpsOn", false); }
+        return o;
+    }
+    /** where is this phone right now (used by the parent to set Home / School on the spot) */
+    @PluginMethod public void locOnce(PluginCall call) {
+        if (getPermissionState("loc") != PermissionState.GRANTED) { requestPermissionForAlias("loc", call, "locOnceDone"); return; }
+        doLocOnce(call);
+    }
+    @PermissionCallback private void locOnceDone(PluginCall call) {
+        if (getPermissionState("loc") == PermissionState.GRANTED) doLocOnce(call); else call.reject("denied");
+    }
+    private void doLocOnce(final PluginCall call) {
+        final android.location.LocationManager lm = (android.location.LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+        final android.location.Location[] best = { null };
+        final boolean[] done = { false };
+        final android.os.Handler hd = new android.os.Handler(android.os.Looper.getMainLooper());
+        final Runnable finish = new Runnable() { @Override public void run() {
+            if (done[0]) return; done[0] = true;
+            if (best[0] == null) { call.reject("nofix"); return; }
+            JSObject o = new JSObject(); o.put("lat", best[0].getLatitude()); o.put("lng", best[0].getLongitude()); o.put("acc", best[0].getAccuracy()); o.put("at", best[0].getTime()); call.resolve(o);
+        } };
+        try {
+            for (String pv : new String[]{ android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER }) {
+                try {
+                    android.location.Location l = lm.getLastKnownLocation(pv);
+                    if (l != null && (best[0] == null || l.getTime() > best[0].getTime())) best[0] = l;
+                    if (lm.isProviderEnabled(pv)) lm.requestSingleUpdate(pv, new android.location.LocationListener() {
+                        @Override public void onLocationChanged(android.location.Location x) { if (best[0] == null || x.getAccuracy() <= best[0].getAccuracy() || x.getTime() > best[0].getTime() + 60000) best[0] = x; hd.post(finish); }
+                        @Override public void onStatusChanged(String a, int b, Bundle c) { }
+                        @Override public void onProviderEnabled(String a) { }
+                        @Override public void onProviderDisabled(String a) { }
+                    }, android.os.Looper.getMainLooper());
+                } catch (SecurityException | IllegalArgumentException e) { }
+            }
+        } catch (Exception e) { }
+        hd.postDelayed(finish, 15000);
+    }
+
     private JSObject perms() {
         Context c = getContext();
         JSObject o = state();
-        o.put("mic", st("mic")); o.put("camera", st("camera"));
+        o.put("mic", st("mic")); o.put("camera", st("camera")); o.put("loc", st("loc")); o.put("bgloc", Build.VERSION.SDK_INT < 29 ? st("loc") : st("bgloc"));
         AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
         o.put("volume", am.getStreamVolume(AudioManager.STREAM_MUSIC)); o.put("volumeMax", am.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
         o.put("ringerMode", am.getRingerMode());
