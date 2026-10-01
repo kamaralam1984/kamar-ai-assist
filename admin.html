@@ -2,153 +2,372 @@
 <html lang="hi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050b1e">
 <meta name="robots" content="noindex,nofollow">
 <title>Piyu Admin</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
-:root{--bg:#0b0a1a;--card:#16132e;--line:#2b2750;--tx:#f1eeff;--mut:#9b94c7;--p1:#ff5fa2;--p2:#8b5cff;--ok:#3ddc97;--warn:#ffb020;--bad:#ff5a6e}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Devanagari",sans-serif}
-header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(11,10,26,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-header h1{font-size:18px;margin:0;flex:1}
-main{max-width:980px;margin:0 auto;padding:14px 14px 80px}
-.btn{border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--tx);border-radius:10px;padding:8px 12px;font-size:14px;cursor:pointer}
-.btn:hover{background:rgba(255,255,255,.12)}
-.btn.primary{background:linear-gradient(135deg,var(--p1),var(--p2));border-color:transparent;font-weight:600}
-.btn.danger{border-color:#7a2033;color:#ffb3bd}.btn.sm{padding:5px 9px;font-size:13px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0}
-input,select{width:100%;height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--tx);font-size:15px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.grow{flex:1;min-width:140px}
-.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600}
-.b-pending{background:#4a3a08;color:var(--warn)}.b-approved{background:#0c3b4a;color:#6fd3ff}.b-active{background:#0b3d2a;color:var(--ok)}.b-revoked{background:#4a1420;color:var(--bad)}
-.u{display:grid;gap:8px}
-.u h3{margin:0;font-size:17px}.mut{color:var(--mut);font-size:13px}
-.tok{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;word-break:break-all;background:rgba(255,255,255,.06);border:1px dashed var(--line);border-radius:10px;padding:8px 10px}
-.stats{display:flex;gap:14px;flex-wrap:wrap}.stats b{color:var(--tx)}
-#login{max-width:420px;margin:12vh auto}
-.msg{min-height:20px;color:var(--bad);font-size:14px}
-.tabs{display:flex;gap:8px;margin:6px 0}.tabs .btn.on{background:var(--p2);border-color:transparent}
-#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2b2861;border:1px solid var(--line);padding:10px 16px;border-radius:12px;display:none;z-index:20}
-.empty{text-align:center;color:var(--mut);padding:28px}
-.hide{display:none!important}
+:root{--bg:#040a1c;--card:rgba(255,255,255,.07);--line:rgba(125,185,255,.2);--tx:#eef6ff;--mut:#9ab4d9;--ok:#38d996;--warn:#ffb84d;--bad:#ff5c6c;
+--gold1:#b8860b;--gold2:#ffd76a;--gold3:#fff3b0;--blue1:#1d4ed8;--blue2:#38bdf8;--blue3:#bae6fd;font-family:Inter,"Noto Sans Devanagari",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--tx)}
+body{background:radial-gradient(900px 560px at 80% -8%,rgba(56,189,248,.34),transparent 62%),radial-gradient(760px 560px at -12% 18%,rgba(29,78,216,.42),transparent 60%),radial-gradient(700px 520px at 50% 115%,rgba(255,200,80,.14),transparent 60%),var(--bg);background-attachment:fixed;background-size:140% 140%,140% 140%,140% 140%,auto;animation:aurora 24s ease-in-out infinite alternate}
+@keyframes aurora{0%{background-position:0% 0%,100% 0%,50% 100%,0 0}100%{background-position:100% 60%,0% 70%,60% 0%,0 0}}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,h4,p{margin:0}
+.fx{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.fx i{position:absolute;bottom:-12px;border-radius:50%;background:#7dd3fc;box-shadow:0 0 12px 2px rgba(125,211,252,.7);animation:floatUp linear infinite}.fx i.g{background:#ffd76a;box-shadow:0 0 12px 2px rgba(255,215,106,.7)}
+@keyframes floatUp{0%{transform:translateY(0);opacity:0}10%{opacity:1}100%{transform:translateY(-108vh) translateX(40px);opacity:0}}
+@keyframes goldflow{0%{background-position:0% 0}100%{background-position:-220% 0}}
+@keyframes blueflow{0%{background-position:-220% 0}100%{background-position:0% 0}}
+@keyframes rise{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes spinr{to{transform:rotate(-360deg)}}
+@keyframes ping{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.7);opacity:0}}
+@keyframes blip{0%,12%{opacity:0;transform:scale(.4)}22%{opacity:1;transform:scale(1.5)}45%,100%{opacity:0;transform:scale(1)}}
+@keyframes pulse{50%{opacity:.35}}
+@keyframes bar{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+/* running lines */
+.lines{position:relative}.lines::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold1),var(--gold2),var(--gold3),var(--gold2),var(--gold1),transparent);background-size:220% 100%;animation:goldflow 3.2s linear infinite}
+.lines::before{content:'';position:absolute;left:0;right:0;bottom:3px;height:2px;background:linear-gradient(90deg,transparent,var(--blue1),var(--blue2),var(--blue3),var(--blue2),var(--blue1),transparent);background-size:220% 100%;animation:blueflow 4.4s linear infinite;opacity:.9}
+/* login */
+#login{position:relative;z-index:1;min-height:100dvh;display:grid;place-items:center;padding:20px}
+.lbox{width:min(420px,100%);padding:30px 24px;border-radius:28px;text-align:center;background:linear-gradient(160deg,rgba(255,255,255,.1),rgba(255,255,255,.04));border:1px solid var(--line);backdrop-filter:blur(16px);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:rise .6s both}
+.lbox h1{font-size:30px;background:linear-gradient(90deg,#3da9ff,#22d3ee,#ffd166);-webkit-background-clip:text;background-clip:text;color:transparent;margin:14px 0 4px}
+.lbox p{color:var(--mut);margin-bottom:16px}
+.orb{position:relative;width:96px;height:96px;margin:30px auto 20px}
+.orb>i{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#3da9ff,#22d3ee,#ffd166,#3da9ff);animation:spin 6s linear infinite}
+.orb>i:nth-of-type(2){inset:-8px;filter:blur(12px);opacity:.45}.orb>i:nth-of-type(3){inset:14px;background:radial-gradient(circle at 35% 30%,#fff,rgba(255,255,255,.1) 60%);animation:none}
+.radar{position:absolute;inset:-38%;border-radius:50%;pointer-events:none}
+.radar::before,.radar::after{content:'';position:absolute;border-radius:50%;border:2px solid transparent}
+.radar::before{inset:0;border-top-color:#ffd76a;border-right-color:rgba(255,215,106,.45);animation:spin 3.4s linear infinite;filter:drop-shadow(0 0 7px rgba(255,215,106,.95))}
+.radar::after{inset:7%;border-bottom-color:#38bdf8;border-left-color:rgba(56,189,248,.45);animation:spinr 4.6s linear infinite;filter:drop-shadow(0 0 7px rgba(56,189,248,.95))}
+.radar .rg{position:absolute;inset:21.6%;border-radius:50%;border:2px solid rgba(56,189,248,.65);opacity:0;animation:ping 3.6s cubic-bezier(.2,.6,.3,1) infinite}.radar .rg.g{border-color:rgba(255,215,106,.7);animation-delay:1.2s}.radar .rg:nth-child(3){animation-delay:2.4s}
+.radar .sweep{position:absolute;inset:7%;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg 250deg,rgba(56,189,248,.05) 250deg,rgba(56,189,248,.38) 330deg,rgba(255,215,106,.85) 360deg);-webkit-mask:radial-gradient(circle,transparent 0 33%,#000 34%);mask:radial-gradient(circle,transparent 0 33%,#000 34%);animation:spin 2.8s linear infinite}
+.radar .blip{position:absolute;width:6px;height:6px;border-radius:50%;background:#ffd76a;box-shadow:0 0 10px 3px rgba(255,215,106,.9);opacity:0;animation:blip 5.6s ease-in-out infinite}.radar .b1{top:18%;left:78%}.radar .b2{top:72%;left:20%;animation-delay:1.9s;background:#7dd3fc}.radar .b3{top:30%;left:12%;animation-delay:3.7s}
+input,select,textarea{width:100%;background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:14px;padding:12px;outline:none;transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--gold2);box-shadow:0 0 0 3px rgba(255,215,106,.18)}
+select option{color:#000}
+.btn{position:relative;overflow:hidden;border:0;border-radius:14px;padding:10px 16px;font-weight:700;color:#fff;cursor:pointer;background:linear-gradient(135deg,#1d4ed8,#0ea5e9);box-shadow:0 6px 18px rgba(14,165,233,.3);transition:transform .15s,filter .2s;display:inline-block}
+.btn:hover{filter:brightness(1.12)}.btn:active{transform:scale(.95)}
+.btn.gold{color:#1b1200;background:linear-gradient(110deg,#b8860b 0%,#ffd76a 12.5%,#fff3b0 25%,#ffd76a 37.5%,#b8860b 50%,#ffd76a 62.5%,#fff3b0 75%,#ffd76a 87.5%,#b8860b 100%);background-size:200% 100%;animation:btnflow 3.4s linear infinite;box-shadow:0 6px 22px rgba(255,183,3,.4)}
+@keyframes btnflow{to{background-position:-100% 0}}
+.btn.ghost{background:rgba(255,255,255,.08);box-shadow:none;border:1px solid var(--line)}.btn.bad{background:linear-gradient(135deg,#b91c1c,#ef4444)}.btn.ok{background:linear-gradient(135deg,#047857,#34d399)}.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:11px}.btn.wide{width:100%;padding:13px}
+.msg{min-height:20px;margin:8px 0;font-size:13px;color:var(--bad)}
+.lmode{display:flex;gap:6px;margin:0 0 14px;padding:4px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid var(--line)}.lmode button{flex:1;border:0;background:none;color:var(--mut);padding:9px 6px;border-radius:12px;cursor:pointer;font-weight:600;font-size:13px;transition:all .25s}.lmode button.on{background:linear-gradient(135deg,#1d4ed8,#0ea5e9);color:#fff;box-shadow:0 4px 14px rgba(14,165,233,.4)}
+/* app shell */
+#app{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 14px 60px}
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 20px 12px;background:rgba(5,12,34,.78);backdrop-filter:blur(16px);margin:0 -14px}
+.logo{position:relative;width:38px;height:38px;flex:none}.logo>i{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#3da9ff,#22d3ee,#ffd166,#3da9ff);animation:spin 6s linear infinite}.logo>i+i{inset:8px;background:radial-gradient(circle at 35% 30%,#fff,rgba(255,255,255,.1) 60%);animation:none}
+header h1{font-size:18px;flex:1}header h1 small{display:block;font-size:11px;color:var(--mut);font-weight:400}
+.live{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:rgba(56,217,150,.14);border:1px solid rgba(56,217,150,.4);font-size:12.5px}.live i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 1.4s infinite}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:12px 0 6px;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--mut);padding:9px 16px;border-radius:14px;cursor:pointer;font-weight:600;transition:all .25s;position:relative}
+.tab.on{color:#fff;background:linear-gradient(135deg,#1d4ed8,#0ea5e9);border-color:transparent;box-shadow:0 4px 18px rgba(14,165,233,.4)}
+.tab .bdg{display:inline-block;margin-left:6px;min-width:18px;padding:1px 6px;border-radius:99px;background:var(--gold2);color:#1b1200;font-size:11px;font-weight:800;animation:pulse 1.6s infinite}
+main>section{animation:rise .5s both}
+.grid{display:grid;gap:14px}.g4{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.card{position:relative;padding:16px;border-radius:22px;background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.035));border:1px solid var(--line);backdrop-filter:blur(14px);box-shadow:0 8px 30px rgba(0,0,0,.28);overflow:hidden;transition:transform .25s,box-shadow .25s;animation:rise .55s both}
+.card::before{content:'';position:absolute;left:0;top:0;height:2px;width:100%;background:linear-gradient(90deg,transparent,var(--gold2),var(--blue2),var(--gold2),transparent);background-size:240% 100%;animation:goldflow 5s linear infinite;opacity:.85}
+.card:hover{transform:translateY(-2px);box-shadow:0 14px 38px rgba(0,0,0,.35),0 0 26px rgba(56,189,248,.14)}
+.card h3{font-size:14px;color:var(--blue3);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.kpi{text-align:center;padding:18px 10px}.kpi b{display:block;font-size:32px;line-height:1.1;background:linear-gradient(90deg,#fff,#7dd3fc);-webkit-background-clip:text;background-clip:text;color:transparent}.kpi span{font-size:12px;color:var(--mut)}.kpi .ic{font-size:22px;margin-bottom:4px;display:block}
+.kpi.gold b{background:linear-gradient(90deg,#fff3b0,#ffd76a);-webkit-background-clip:text;background-clip:text}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}.row:first-child{border-top:0}.row .g{flex:1;min-width:0}.row small{display:block;color:var(--mut);font-size:11.5px}
+.pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:99px;background:rgba(255,255,255,.1);font-weight:700}
+.pill.pending{background:rgba(255,184,77,.22);color:#ffd38a}.pill.approved{background:rgba(56,189,248,.2);color:#bae6fd}.pill.active{background:rgba(56,217,150,.2);color:#8df0c8}.pill.revoked{background:rgba(255,92,108,.22);color:#ff9aa6}.pill.student{background:rgba(255,215,106,.2);color:#ffe28a}.pill.business{background:rgba(139,92,255,.25);color:#d5c6ff}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#64748b}.dot.on{background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 1.4s infinite}
+.bar{position:relative;height:8px;border-radius:8px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:5px}.bar i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#1d4ed8,#38bdf8,#ffd166);background-size:200% 100%;animation:goldflow 2.4s linear infinite;box-shadow:0 0 10px rgba(56,189,248,.7);transition:width 1s cubic-bezier(.2,.8,.2,1);width:0}
+.bar.bad i{background:linear-gradient(90deg,#b91c1c,#ff5c6c,#ffb84d)}.bar.warn i{background:linear-gradient(90deg,#b45309,#ffb84d,#ffe28a)}.bar.good i{background:linear-gradient(90deg,#047857,#38d996,#9df0cc)}
+.ring{position:relative;width:86px;height:86px;display:grid;place-items:center;margin:0 auto}.ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}.ring .t{fill:none;stroke:rgba(255,255,255,.1);stroke-width:7}.ring .f{fill:none;stroke:#38bdf8;stroke-width:7;stroke-linecap:round;filter:drop-shadow(0 0 6px rgba(56,189,248,.8));transition:stroke-dashoffset 1.3s cubic-bezier(.2,.8,.2,1)}.ring.warn .f{stroke:#ffb84d}.ring.bad .f{stroke:#ff5c6c}.ring.good .f{stroke:#38d996}
+.ring b{font-size:17px;position:relative}.gauge{text-align:center}.gauge small{display:block;color:var(--mut);margin-top:6px;font-size:12px}
+.chart{height:170px;display:flex;align-items:flex-end;gap:5px;padding-top:10px}.chart .c{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;min-width:0}.chart .b{width:100%;border-radius:7px 7px 2px 2px;background:linear-gradient(180deg,#38bdf8,#1d4ed8);transform-origin:bottom;animation:bar .8s cubic-bezier(.2,.8,.2,1) both;box-shadow:0 0 14px rgba(56,189,248,.45)}.chart .b.y{background:linear-gradient(180deg,#ffd76a,#b8860b);box-shadow:0 0 14px rgba(255,215,106,.5)}.chart small{font-size:9.5px;color:var(--mut)}.chart .v{font-size:10px;color:var(--blue3)}
+.rad{position:relative;width:170px;height:170px;margin:6px auto}.rad .radar{inset:-4%}.rad .dotb{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--ok);box-shadow:0 0 14px 4px rgba(56,217,150,.9);animation:pulse 1.4s infinite;transform:translate(-50%,-50%)}
+.flag{font-size:18px}
+.users{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.uc{cursor:pointer}.uc .top{display:flex;gap:12px;align-items:center}.av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:18px;background:conic-gradient(from 0deg,#3da9ff,#22d3ee,#ffd166,#3da9ff);color:#06112b;flex:none;position:relative}.av .dot{position:absolute;right:-1px;bottom:-1px;border:2px solid #0a1636}
+.uc h4{font-size:16px}.uc .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.uc .st{margin-top:10px;padding:9px 10px;border-radius:14px;background:rgba(255,255,255,.05);font-size:12px;color:var(--mut)}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.toolbar input{flex:1;min-width:180px}.toolbar select{width:auto}
+.drawer{position:fixed;inset:0;z-index:40;background:rgba(2,6,20,.72);backdrop-filter:blur(6px);display:flex;justify-content:flex-end;animation:fade .25s}
+.dr{width:min(760px,100%);height:100%;overflow:auto;padding:16px 16px 60px;background:linear-gradient(180deg,#0a1636,#050b1e);border-left:1px solid var(--line);animation:slideIn .35s cubic-bezier(.2,.8,.2,1)}
+@keyframes slideIn{from{transform:translateX(60px);opacity:0}to{transform:none;opacity:1}}
+.dr .hd{display:flex;gap:12px;align-items:center;margin-bottom:12px}.dr .hd h2{font-size:20px;flex:1}
+.x{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);cursor:pointer;font-size:16px}
+.tok{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:rgba(0,0,0,.35);border:1px dashed rgba(255,215,106,.5);padding:9px 10px;border-radius:12px;word-break:break-all;color:var(--gold3)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.sw{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)}.sw:first-child{border-top:0}
+.sw label{position:relative;width:48px;height:26px;flex:none;margin:0}.sw input{opacity:0;width:0;height:0;position:absolute}
+.sw .tr{position:absolute;inset:0;border-radius:99px;background:rgba(255,255,255,.15);transition:background .25s;cursor:pointer}.sw .tr::after{content:'';position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .25s cubic-bezier(.3,1.5,.5,1)}
+.sw input:checked+.tr{background:linear-gradient(135deg,#047857,#38d996);box-shadow:0 0 14px rgba(56,217,150,.5)}.sw input:checked+.tr::after{transform:translateX(22px)}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}.kv div{padding:9px 11px;border-radius:12px;background:rgba(255,255,255,.05);font-size:13px;word-break:break-word}.kv small{display:block;color:var(--mut);font-size:11px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}.tbl td,.tbl th{padding:7px 6px;border-top:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}.tbl th{color:var(--mut);font-weight:600;font-size:11px}
+.tw{overflow-x:auto}
+.sec{margin-top:14px}
+dialog{border:1px solid var(--line);border-radius:24px;background:#0b1a3c;color:var(--tx);width:min(520px,94vw);padding:18px;box-shadow:0 0 0 1px rgba(255,215,106,.2),0 20px 60px rgba(0,0,0,.6)}
+dialog::backdrop{background:rgba(0,0,0,.65);backdrop-filter:blur(4px)}dialog label{display:block;margin:10px 0;color:var(--mut);font-size:13px}
+dialog h3{margin-bottom:6px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:90;background:#0b1a3c;border:1px solid var(--gold2);padding:10px 18px;border-radius:99px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:rise .3s both}
+.empty{padding:22px;text-align:center;color:var(--mut)}
+.confetti{position:fixed;inset:0;z-index:95;pointer-events:none}
+@media (max-width:560px){.users{grid-template-columns:1fr}.g2{grid-template-columns:1fr}.dr{padding:12px 12px 60px}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important}}
 </style>
 </head>
 <body>
-<div id="login" class="card">
-  <h2 style="margin-top:0">🛠 Piyu Admin</h2>
-  <p class="mut">Sirf owner ke liye. Owner token daaliye (wahi jo server ke <code>PIYU_TOKEN</code> me hai).</p>
-  <input id="own" type="password" placeholder="Owner token" autocomplete="off">
-  <div class="msg" id="lmsg"></div>
-  <button class="btn primary" id="lgo" style="width:100%;margin-top:6px">अंदर जाएँ</button>
+<div class="fx" id="fx" aria-hidden="true"></div>
+
+<div id="login">
+  <div class="lbox">
+    <div class="orb"><div class="radar"><span class="rg"></span><span class="rg g"></span><span class="rg"></span><span class="sweep"></span><span class="blip b1"></span><span class="blip b2"></span><span class="blip b3"></span></div><i></i><i></i><i></i></div>
+    <h1>Piyu Admin</h1>
+    <div class="lmode"><button type="button" class="on" data-m="mail">✉ Email + Password</button><button type="button" data-m="pin">🔑 Owner PIN / token</button></div>
+    <div id="lMail"><input id="lemail" type="email" autocomplete="username" placeholder="Email" spellcheck="false"><input id="lpass" type="password" autocomplete="current-password" placeholder="Password" style="margin-top:10px"></div>
+    <div id="lPin" hidden><input id="tok" type="password" autocomplete="off" placeholder="Owner PIN / token" spellcheck="false"></div>
+    <div class="msg" id="lmsg" role="status"></div>
+    <button class="btn gold wide" id="lgo">🔓 Login</button>
+  </div>
 </div>
 
-<div id="app" class="hide">
-  <header>
-    <h1>🛠 Piyu Admin <span class="badge b-pending" id="pcount" hidden></span></h1>
-    <button class="btn sm" id="refresh">🔄 नया</button>
-    <button class="btn sm" id="logout">Logout</button>
+<div id="app" hidden>
+  <header class="lines">
+    <div class="logo"><i></i><i></i></div>
+    <h1>Piyu Admin<small id="sub">—</small></h1>
+    <div class="live" id="liveb"><i></i><span id="liven">0</span> online</div>
+    <button class="x" id="out" title="Logout">⎋</button>
   </header>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-t="dash">📊 Dashboard</button>
+    <button class="tab" data-t="users">👥 Users <span class="bdg" id="pendb" hidden></span></button>
+    <button class="tab" data-t="sec">🛡 Security</button>
+    <button class="tab" data-t="logs">📜 Logs</button>
+    <button class="tab" data-t="set">⚙ Settings</button>
+  </div>
   <main>
-    <div class="card">
-      <div class="row"><div class="mut grow">Nayi request aate hi yahan dikhegi. <b>Approve</b> dabane par token dikhega; use user ko phone / WhatsApp par bhejiye. Ek token sirf ek device par chalta hai.</div></div>
-      <div class="row" style="margin-top:8px">
-        <input class="grow" id="addn" placeholder="Naya user (naam)"><input class="grow" id="addp" placeholder="Mobile (optional)" inputmode="tel">
-        <button class="btn primary" id="add">➕ User jodein</button>
-      </div>
-    </div>
-    <div class="row" style="margin:6px 2px">
-      <span class="mut">Dikhayein:</span>
-      <div class="tabs" id="tabs"></div>
-      <span class="mut grow" id="summary" style="text-align:right"></span>
-    </div>
-    <div id="list"></div>
+    <section id="p-dash"></section>
+    <section id="p-users" hidden></section>
+    <section id="p-sec" hidden></section>
+    <section id="p-logs" hidden></section>
+    <section id="p-set" hidden></section>
   </main>
 </div>
-<div id="toast"></div>
+
+<div id="drawer" class="drawer" hidden><div class="dr" id="dr"></div></div>
+
+<dialog id="newDlg">
+  <h3>➕ नया user</h3>
+  <label>नाम<input id="nuName" placeholder="जैसे: Rahul Sharma"></label>
+  <label>Mobile (WhatsApp)<input id="nuPhone" type="tel" placeholder="98765 43210"></label>
+  <label>Password / token (खाली छोड़ें तो अपने-आप बनेगा)<div style="display:flex;gap:8px"><input id="nuPass" placeholder="कम से कम 8 अक्षर, space नहीं"><button class="btn ghost sm" type="button" id="nuGen">🎲</button></div></label>
+  <div class="sec"><h3>Features</h3><div id="nuFeat"></div></div>
+  <div class="msg" id="nuMsg"></div>
+  <div class="acts" style="justify-content:flex-end"><button class="btn ghost" id="nuCancel" type="button">रद्द करें</button><button class="btn gold" id="nuSave" type="button">बनाएँ</button></div>
+</dialog>
+<dialog id="pwDlg">
+  <h3>🔑 Password बदलें</h3>
+  <p id="pwFor" style="color:var(--mut);font-size:13px"></p>
+  <label>नया password / token<div style="display:flex;gap:8px"><input id="pwNew" placeholder="कम से कम 8 अक्षर, space नहीं"><button class="btn ghost sm" type="button" id="pwGen">🎲</button></div></label>
+  <div class="msg" id="pwMsg"></div>
+  <div class="acts" style="justify-content:flex-end"><button class="btn ghost" id="pwCancel" type="button">रद्द करें</button><button class="btn gold" id="pwSave" type="button">बदलें</button></div>
+</dialog>
 
 <script>
 'use strict';
-const $ = s => document.querySelector(s);
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let OWN = '', FILTER = 'all', DATA = { users: [] }, timer = null;
-try { OWN = localStorage.getItem('piyu.admin') || ''; } catch (e) { }
-const toast = m => { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2600); };
-async function api(path, method, body) {
-  const r = await fetch(path, { method: method || 'GET', headers: Object.assign({ 'X-Piyu-Token': OWN }, body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
-  let j = {}; try { j = await r.json(); } catch (e) { }
-  if (r.status === 401 || r.status === 403 || r.status === 429) { const e = new Error(j.error || 'http ' + r.status); e.status = r.status; throw e; }
-  if (!r.ok) throw new Error(j.error || 'http ' + r.status);
-  return j;
-}
-const ago = t => { if (!t) return '—'; const s = Math.max(0, (Date.now() - t) / 1000); return s < 90 ? 'abhi' : s < 5400 ? Math.round(s / 60) + ' min pehle' : s < 172800 ? Math.round(s / 3600) + ' ghante pehle' : Math.round(s / 86400) + ' din pehle'; };
-const dt = t => t ? new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—';
-const mb = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB';
-const STAT = { pending: 'इंतज़ार (मंज़ूरी बाकी)', approved: 'मंज़ूर — token अभी use नहीं हुआ', active: 'चालू — एक device से बंधा', revoked: 'बंद किया गया' };
+let TOKEN = '', SESS = '', LMODE = 'mail'; try { TOKEN = localStorage.getItem('piyu.admin') || ''; SESS = localStorage.getItem('piyu.adminS') || ''; } catch (e) { }
+const FEATS = { voice: ['🔊', 'Voice / आवाज़'], ai: ['🤖', 'AI जवाब'], web: ['🌐', 'Internet खोज'], docs: ['📄', 'Documents upload'], student: ['🎓', 'Student mode'], business: ['💼', 'Business mode'] };
+const TABN = { shome: 'Study home', courses: 'Courses', quiz: 'Quiz', cards: 'Flashcards', plan: 'Plan', chat: 'Chat / Teacher', home: 'Home', tasks: 'काम', docs: 'Docs', prog: 'Progress', set: 'Settings', app: 'App' };
+let tab = 'dash', ST = { ov: null, users: [], cur: null };
 
-function waLink(u) {
-  let p = (u.phone || '').replace(/\D/g, ''); if (p.length === 10) p = '91' + p;
-  const msg = `Namaste ${u.name}, aapka Piyu ka token:\n${u.token}\n\nApp kholkar pehli baar login ke baad "Sync token" me ye daaliye. Ye token sirf usi phone par chalega jahan aap pehli baar daalenge. Kisi ko mat dijiye.`;
-  return p ? `https://wa.me/${p}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+async function api(path, opt) {
+  const o = Object.assign({ headers: {} }, opt || {}); o.headers = Object.assign(SESS ? { 'X-Piyu-Admin': SESS } : { 'X-Piyu-Token': TOKEN }, o.headers);
+  if (o.json !== undefined) { o.body = JSON.stringify(o.json); o.headers['Content-Type'] = 'application/json'; o.method = o.method || 'POST'; delete o.json; }
+  const raw = o.raw; delete o.raw;
+  const r = await fetch(path, o);
+  if (r.status === 401 || (r.status === 403 && path.indexOf('/admin') > 0)) { const e = new Error('auth'); e.status = r.status; throw e; }
+  return raw ? r : r.json();
 }
-function render() {
-  const us = DATA.users.filter(u => FILTER === 'all' || u.status === FILTER);
-  const c = { all: DATA.users.length }; DATA.users.forEach(u => c[u.status] = (c[u.status] || 0) + 1);
-  $('#tabs').innerHTML = [['all', 'सब'], ['pending', 'इंतज़ार'], ['approved', 'मंज़ूर'], ['active', 'चालू'], ['revoked', 'बंद']].map(([k, n]) => `<button class="btn sm ${FILTER === k ? 'on' : ''}" data-f="${k}">${n} ${c[k] || 0}</button>`).join('');
-  $('#tabs').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { FILTER = b.dataset.f; render(); });
-  const p = $('#pcount'); p.hidden = !DATA.pending; p.textContent = DATA.pending + ' नई request'; document.title = (DATA.pending ? '(' + DATA.pending + ') ' : '') + 'Piyu Admin';
-  $('#summary').textContent = 'कुल ' + DATA.users.length + ' users';
-  if (!us.length) { $('#list').innerHTML = '<div class="card empty">कोई user नहीं</div>'; return; }
-  $('#list').innerHTML = us.map(u => {
-    const tokenShown = u.status !== 'pending';
-    const acts = [];
-    if (u.status === 'pending') acts.push(`<button class="btn primary" data-a="approve">✅ Approve करें (token दिखाएँ)</button>`);
-    if (u.status === 'active' || u.status === 'approved') acts.push(`<button class="btn sm" data-a="reset" title="नया phone / app साफ़ हुआ: अगला device बंध सकेगा">📱 Device reset</button>`);
-    if (u.status === 'revoked') acts.push(`<button class="btn sm" data-a="restore">♻ चालू करें</button>`);
-    if (u.status !== 'revoked' && u.status !== 'pending') acts.push(`<button class="btn sm danger" data-a="revoke">⛔ बंद करें</button>`);
-    if (u.status !== 'pending') acts.push(`<button class="btn sm" data-a="regen" title="पुराना token तुरंत बेकार">🔁 नया token</button>`);
-    acts.push(`<button class="btn sm danger" data-a="delete">🗑 हटाएँ</button>`);
-    return `<div class="card u" data-id="${u.id}">
-      <div class="row"><h3 class="grow">${esc(u.name)}</h3><span class="badge b-${u.status}">${STAT[u.status] || u.status}</span></div>
-      <div class="mut">📞 ${u.phone ? esc(u.phone) : 'नंबर नहीं'} · माँगा: ${dt(u.created)} · आख़िरी बार: ${ago(u.lastSeen)}${u.device ? ' · device <code>' + esc(u.device) + '</code> (' + dt(u.bound) + ')' : ''}</div>
-      ${u.stats && u.stats.tasks != null ? `<div class="stats mut">📝 <b>${u.stats.tasks}</b> काम · 📄 <b>${u.stats.docs}</b> documents · 💾 <b>${mb(u.stats.bytes)}</b></div>` : ''}
-      ${tokenShown ? `<div class="tok" id="t${u.id}">${esc(u.token)}</div>
-      <div class="row"><button class="btn sm primary" data-a="copy">📋 Token copy</button>${u.phone ? `<a class="btn sm" href="${waLink(u)}" target="_blank" rel="noopener">💬 WhatsApp</a><a class="btn sm" href="tel:+${(u.phone.length === 10 ? '91' : '') + u.phone}">📞 Call</a>` : `<a class="btn sm" href="${waLink(u)}" target="_blank" rel="noopener">💬 WhatsApp (number chunein)</a>`}</div>` : `<div class="mut">🔒 Token तब तक बेकार है जब तक आप Approve न करें।</div>`}
-      <div class="row">${acts.join('')}</div>
-      <div class="row"><input class="grow" data-note placeholder="Note (सिर्फ़ आपके लिए)" value="${esc(u.note)}"><button class="btn sm" data-a="note">सहेजें</button></div>
-    </div>`;
-  }).join('');
-  $('#list').querySelectorAll('.u').forEach(card => {
-    const id = card.dataset.id, u = DATA.users.find(x => String(x.id) === id);
-    card.querySelectorAll('[data-a]').forEach(b => b.onclick = () => act(u, b.dataset.a, card));
-  });
-}
-async function act(u, a, card) {
-  try {
-    if (a === 'copy') { try { await navigator.clipboard.writeText(u.token); } catch (e) { const r = document.createRange(); r.selectNodeContents($('#t' + u.id)); getSelection().removeAllRanges(); getSelection().addRange(r); document.execCommand('copy'); } return toast('Token copy हो गया'); }
-    if (a === 'note') { await api('/api/admin/users/' + u.id + '/note', 'POST', { note: card.querySelector('[data-note]').value }); return toast('Note सहेजा'); }
-    if (a === 'delete' && !confirm(u.name + ' और उनका सारा data हमेशा के लिए हटाएँ?')) return;
-    if (a === 'revoke' && !confirm(u.name + ' का access बंद करें?')) return;
-    if (a === 'regen' && !confirm('नया token बनेगा; पुराना तुरंत बंद। जारी रखें?')) return;
-    if (a === 'reset' && !confirm('Device reset: अगला device जो token डालेगा वह बंध जाएगा। जारी रखें?')) return;
-    await api('/api/admin/users/' + u.id + '/' + a, 'POST');
-    toast({ approve: 'Approve हो गया — token नीचे है', reset: 'Device reset हो गया', revoke: 'बंद कर दिया', restore: 'चालू कर दिया', regen: 'नया token बन गया', delete: 'हटा दिया' }[a] || 'हो गया');
-    await load();
-  } catch (e) { toast('गड़बड़: ' + e.message); }
-}
-async function load() {
-  try { DATA = await api('/api/admin/users'); render(); $('#login').classList.add('hide'); $('#app').classList.remove('hide'); }
-  catch (e) {
-    if (e.status) { OWN = ''; try { localStorage.removeItem('piyu.admin'); } catch (x) { } clearInterval(timer); $('#app').classList.add('hide'); $('#login').classList.remove('hide'); $('#lmsg').textContent = e.status === 429 ? 'बहुत ज़्यादा कोशिशें — कुछ देर बाद फिर कीजिए' : e.status === 403 ? 'यह owner token नहीं है' : 'Token ग़लत है'; }
-    else toast('Server से जुड़ नहीं पाई');
+function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+const fmtDur = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? h + 'h ' + m + 'm' : m ? m + 'm' : s + 's'; };
+const ago = ts => { if (!ts) return '—'; const d = (Date.now() - ts) / 1000; return d < 60 ? 'अभी' : d < 3600 ? Math.floor(d / 60) + ' min पहले' : d < 86400 ? Math.floor(d / 3600) + ' घंटे पहले' : Math.floor(d / 86400) + ' दिन पहले'; };
+const when = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+const flag = cc => cc && /^[A-Za-z]{2}$/.test(cc) ? String.fromCodePoint(...cc.toUpperCase().split('').map(c => 127397 + c.charCodeAt(0))) : '🌐';
+const place = x => [x.city, x.country].filter(Boolean).join(', ') || (x.cc === '--' ? 'Local network' : 'पता नहीं');
+const shortUA = ua => { ua = ua || ''; const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : ''; const br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : ''; return [os, br].filter(Boolean).join(' · ') || '—'; };
+function countUp(el, to, ms) { const t0 = performance.now(); (function f(t) { const k = Math.min(1, (t - t0) / (ms || 900)), v = to * (1 - Math.pow(1 - k, 3)); el.textContent = Math.round(v); if (k < 1) requestAnimationFrame(f); else el.textContent = Math.round(to); })(t0); }
+function animateAll(root) { (root || document).querySelectorAll('[data-n]').forEach(n => countUp(n, +n.dataset.n)); requestAnimationFrame(() => requestAnimationFrame(() => { (root || document).querySelectorAll('.bar i[data-w]').forEach(i => i.style.width = i.dataset.w + '%'); (root || document).querySelectorAll('.ring .f[data-to]').forEach(c => c.style.strokeDashoffset = c.dataset.to); })); }
+const bar = (f, cls) => `<div class="bar ${cls || ''}"><i data-w="${Math.round(Math.max(0, Math.min(1, f || 0)) * 100)}"></i></div>`;
+function ringSvg(f, label, sub, cls) { const r = 34, c = 2 * Math.PI * r; return `<div class="gauge"><div class="ring ${cls || ''}"><svg viewBox="0 0 80 80"><circle class="t" cx="40" cy="40" r="${r}"/><circle class="f" cx="40" cy="40" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${c.toFixed(1)}" data-to="${(c * (1 - Math.max(0, Math.min(1, f)))).toFixed(1)}"/></svg><b>${label}</b></div><small>${sub}</small></div>`; }
+function mountFX() { const fx = $('#fx'); if (fx.children.length) return; for (let i = 0; i < 16; i++) { const s = document.createElement('i'); s.style.cssText = `left:${Math.round(Math.random() * 100)}%;animation-duration:${14 + Math.random() * 16}s;animation-delay:${-Math.random() * 20}s;width:${3 + Math.random() * 5}px;height:${3 + Math.random() * 5}px;opacity:${0.25 + Math.random() * 0.4}`; if (i % 3 === 0) s.className = 'g'; fx.appendChild(s); } }
+function confetti() { if (matchMedia('(prefers-reduced-motion:reduce)').matches) return; const cv = document.createElement('canvas'); cv.className = 'confetti'; cv.width = innerWidth; cv.height = innerHeight; document.body.appendChild(cv); const x = cv.getContext('2d'), cols = ['#ffd166', '#3da9ff', '#4ee1c1', '#fff']; const ps = Array.from({ length: 90 }, () => ({ x: cv.width / 2, y: cv.height * .6, vx: (Math.random() - .5) * 13, vy: -Math.random() * 14 - 4, r: 3 + Math.random() * 4, c: cols[Math.floor(Math.random() * 4)], a: 1 })); let f = 0; (function s() { x.clearRect(0, 0, cv.width, cv.height); ps.forEach(p => { p.vy += .36; p.x += p.vx; p.y += p.vy; p.a -= .008; x.globalAlpha = Math.max(0, p.a); x.fillStyle = p.c; x.fillRect(p.x, p.y, p.r * 2, p.r); }); if (++f < 140) requestAnimationFrame(s); else cv.remove(); })(); }
+
+/* ---------------- login ---------------- */
+$$('.lmode button').forEach(b => b.onclick = () => { LMODE = b.dataset.m; $$('.lmode button').forEach(x => x.classList.toggle('on', x === b)); $('#lMail').hidden = LMODE !== 'mail'; $('#lPin').hidden = LMODE !== 'pin'; $('#lmsg').textContent = ''; });
+async function login(auto) {
+  $('#lmsg').textContent = '';
+  if (!auto) {
+    if (LMODE === 'mail') {
+      const em = $('#lemail').value.trim(), pw = $('#lpass').value;
+      if (!em || !pw) { $('#lmsg').textContent = '⚠ Email और Password दोनों डालिए'; return; }
+      let r; try { r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em, password: pw }) }); } catch (e) { $('#lmsg').textContent = '⚠ Server तक नहीं पहुँच पा रही'; return; }
+      if (r.status === 429) { $('#lmsg').textContent = '⚠ बहुत ज़्यादा कोशिशें — थोड़ी देर बाद फिर कीजिए'; return; }
+      if (!r.ok) { $('#lmsg').textContent = '⚠ Email या Password सही नहीं है'; return; }
+      SESS = (await r.json()).session; TOKEN = ''; $('#lpass').value = '';
+    } else { TOKEN = $('#tok').value.trim(); SESS = ''; }
   }
+  try { const me = await api('/api/me'); if (me.role !== 'owner') throw new Error('role'); }
+  catch (e) { if (!auto) { $('#lmsg').textContent = LMODE === 'mail' ? '⚠ Login नहीं हो सका' : '⚠ Owner PIN / token सही नहीं है'; } SESS = auto ? '' : SESS; return; }
+  try { localStorage.setItem('piyu.admin', TOKEN); localStorage.setItem('piyu.adminS', SESS); } catch (e) { }
+  $('#login').hidden = true; $('#app').hidden = false; confetti(); boot();
 }
-$('#lgo').onclick = async () => { OWN = $('#own').value.trim(); if (!OWN) return; $('#lmsg').textContent = ''; try { localStorage.setItem('piyu.admin', OWN); } catch (e) { } await load(); if (!$('#app').classList.contains('hide')) { clearInterval(timer); timer = setInterval(load, 15000); } };
-$('#own').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lgo').click(); });
-$('#refresh').onclick = load;
-$('#logout').onclick = () => { OWN = ''; try { localStorage.removeItem('piyu.admin'); } catch (e) { } clearInterval(timer); $('#app').classList.add('hide'); $('#login').classList.remove('hide'); $('#own').value = ''; };
-$('#add').onclick = async () => { const n = $('#addn').value.trim(); if (n.length < 2) return toast('Naam likhiye'); try { await api('/api/admin/users', 'POST', { name: n, phone: $('#addp').value }); $('#addn').value = ''; $('#addp').value = ''; toast('User jod diya — token niche hai'); await load(); } catch (e) { toast('गड़बड़: ' + e.message); } };
-if (OWN) { load().then(() => { if (!$('#app').classList.contains('hide')) timer = setInterval(load, 15000); }); }
+$('#lgo').onclick = () => login(); $('#lemail').onkeydown = $('#lpass').onkeydown = $('#tok').onkeydown = e => { if (e.key === 'Enter') login(); };
+$('#out').onclick = async () => { try { if (SESS) await api('/api/admin/logout', { json: {} }); localStorage.removeItem('piyu.admin'); localStorage.removeItem('piyu.adminS'); } catch (e) { } location.reload(); };
+
+/* ---------------- tabs ---------------- */
+$('#tabs').onclick = e => { const b = e.target.closest('.tab'); if (!b) return; tab = b.dataset.t; $$('.tab').forEach(x => x.classList.toggle('on', x === b)); $$('main>section').forEach(s => s.hidden = s.id !== 'p-' + tab); render(); };
+let timer = null;
+async function boot() { mountFX(); await refresh(); clearInterval(timer); timer = setInterval(() => { if ($('#drawer').hidden && !document.querySelector('dialog[open]')) refresh(); }, 15000); }
+async function refresh() {
+  try {
+    const [ov, us] = await Promise.all([api('/api/admin/overview'), api('/api/admin/users')]); ST.ov = ov; ST.users = us.users || [];
+    $('#liven').textContent = ov.online.length; $('#sub').textContent = (ov.owner || 'Owner') + ' · ' + ov.users.total + ' users · ' + (ov.geoip ? 'GeoIP on' : 'GeoIP off');
+    const p = ov.users.pending; $('#pendb').hidden = !p; $('#pendb').textContent = p;
+    render();
+    if (ST.cur && !$('#drawer').hidden) openUser(ST.cur, true);
+  } catch (e) { if (e.message === 'auth') { $('#app').hidden = true; $('#login').hidden = false; $('#lmsg').textContent = '⚠ दोबारा login कीजिए'; } }
+}
+function render() { if (!ST.ov) return; ({ dash: rDash, users: rUsers, sec: rSec, logs: rLogs, set: rSet })[tab](); }
+
+/* ---------------- dashboard ---------------- */
+function rDash() {
+  const o = ST.ov, h = o.health || {}, m = h.mem || {}, dk = h.disk || {}, memUsed = m.total ? 1 - m.available / m.total : 0, load = h.load ? h.load[0] / (h.cpus || 1) : 0, diskUsed = dk.total ? 1 - dk.free / dk.total : 0;
+  const cls = f => f > .85 ? 'bad' : f > .65 ? 'warn' : 'good';
+  const maxm = Math.max(1, ...o.trend.map(t => t.minutes)), maxu = Math.max(1, ...o.trend.map(t => t.users));
+  const n = o.online.length;
+  $('#p-dash').innerHTML = `
+  <div class="grid g4">
+    <div class="card kpi"><span class="ic">👥</span><b data-n="${o.users.total}">0</b><span>कुल users</span></div>
+    <div class="card kpi gold"><span class="ic">🟢</span><b data-n="${n}">0</b><span>अभी online</span></div>
+    <div class="card kpi"><span class="ic">⏳</span><b data-n="${o.users.pending}">0</b><span>मंज़ूरी बाकी</span></div>
+    <div class="card kpi"><span class="ic">⏱</span><b data-n="${o.today.minutes}">0</b><span>आज के मिनट (सब users)</span></div>
+    <div class="card kpi"><span class="ic">🎓</span><b data-n="${o.users.students}">0</b><span>Students</span></div>
+    <div class="card kpi"><span class="ic">💼</span><b data-n="${o.users.business}">0</b><span>Business</span></div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>📈 पिछले 14 दिन — मिनट (पीला) और users (नीला)</h3>
+      <div class="chart">${o.trend.map((t, i) => `<div class="c"><span class="v">${t.minutes || ''}</span><div style="display:flex;gap:2px;align-items:flex-end;width:100%;height:100%"><div class="b y" style="height:${Math.max(2, t.minutes / maxm * 100)}%;animation-delay:${i * 45}ms"></div><div class="b" style="height:${Math.max(2, t.users / maxu * 100)}%;animation-delay:${i * 45 + 25}ms"></div></div><small>${esc(t.day.slice(8))}</small></div>`).join('')}</div></div>
+    <div class="card"><h3>📡 अभी कौन online है <span class="pill active">${n}</span></h3>
+      <div class="rad"><div class="radar"><span class="rg"></span><span class="rg g"></span><span class="rg"></span><span class="sweep"></span></div>${o.online.slice(0, 12).map((x, i) => { const a = (i * 137.5) % 360, r = 22 + (i * 17) % 55; return `<span class="dotb" title="${esc(x.name)}" style="left:${50 + r * Math.cos(a * Math.PI / 180) * .85}%;top:${50 + r * Math.sin(a * Math.PI / 180) * .85}%"></span>`; }).join('')}</div>
+      ${n ? o.online.map(x => `<div class="row"><span class="flag">${flag(x.cc)}</span><div class="g"><b>${esc(x.name)}</b> <span class="pill ${esc(x.mode || '')}">${esc(x.mode || '')}</span><small>${esc(place(x))} · ${esc(x.ip)} · ${fmtDur(x.secs)}</small></div></div>`).join('') : '<div class="empty">अभी कोई online नहीं</div>'}</div>
+  </div>
+  <div class="grid g3" style="margin-top:14px">
+    <div class="card"><h3>🖥 Server की सेहत</h3><div class="grid" style="grid-template-columns:repeat(2,1fr);gap:6px">
+      ${ringSvg(Math.min(1, load), Math.round(load * 100) + '%', 'CPU load ' + (h.load ? h.load[0] : '—'), cls(load))}
+      ${ringSvg(memUsed, Math.round(memUsed * 100) + '%', 'RAM ' + (m.total ? Math.round((m.total - m.available) / 1024 * 10) / 10 + '/' + Math.round(m.total / 1024) + ' GB' : '—'), cls(memUsed))}
+      ${ringSvg(diskUsed, Math.round(diskUsed * 100) + '%', 'Disk ' + (dk.total ? Math.round(dk.free / 1024) + ' GB free' : '—'), cls(diskUsed))}
+      ${ringSvg(m.swapTotal ? m.swapUsed / m.swapTotal : 0, m.swapTotal ? Math.round(m.swapUsed / m.swapTotal * 100) + '%' : '—', 'Swap', cls(m.swapTotal ? m.swapUsed / m.swapTotal : 0))}
+    </div><p style="color:var(--mut);font-size:12px;margin-top:8px">⏰ Uptime: ${h.uptime ? Math.floor(h.uptime / 86400) + ' दिन ' + Math.floor(h.uptime % 86400 / 3600) + ' घंटे' : '—'} · 🤖 AI: ${(h.ai || []).length ? esc((h.ai || []).join(', ')) : 'बंद / नहीं लगा'}</p></div>
+    <div class="card"><h3>🌍 किस देश से</h3>${o.countries.length ? o.countries.map(c => `<div class="row"><span class="flag">${flag(c.cc)}</span><div class="g"><b>${esc(c.country)}</b><small>${c.users} user · ${c.sessions} session</small>${bar(c.sessions / Math.max(1, o.countries[0].sessions))}</div></div>`).join('') : '<div class="empty">अभी data नहीं (users के login होते ही दिखेगा)</div>'}</div>
+    <div class="card"><h3>🏆 इस हफ़्ते सबसे ज़्यादा समय</h3>${o.top.length ? o.top.map((t, i) => `<div class="row"><b style="width:22px">${i + 1}</b><div class="g"><b>${esc(t.name)}</b>${bar(t.minutes / Math.max(1, o.top[0].minutes))}</div><span class="pill">${t.minutes} min</span></div>`).join('') : '<div class="empty">अभी data नहीं</div>'}</div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>💾 Storage (user-wise)</h3>${o.storage.length ? o.storage.slice().sort((a, b) => b.mb - a.mb).map(s => `<div class="row"><div class="g"><b>${esc(s.name)}</b>${bar(s.mb / Math.max(.1, o.storage.reduce((m, x) => Math.max(m, x.mb), 0)))}</div><span class="pill">${s.mb} MB</span></div>`).join('') : '<div class="empty">—</div>'}</div>
+    <div class="card"><h3>🛡 हाल की security घटनाएँ</h3>${secList(o.security.slice(0, 6))}</div>
+  </div>`;
+  animateAll($('#p-dash'));
+}
+const SECN = { 'bad-token': '🔑 ग़लत token', locked: '🚫 IP lock', device: '📱 दूसरा device', pending: '⏳ pending token', revoked: '⛔ बंद user' };
+function secList(rows) { return rows.length ? rows.map(x => `<div class="row"><span class="flag">🛡</span><div class="g"><b>${esc(SECN[x.kind] || x.kind)}</b><small>${esc(x.ip)}${x.country ? ' · ' + esc(x.country) : ''} · ${when(x.at)}</small></div></div>`).join('') : '<div class="empty">✅ कुछ संदिग्ध नहीं</div>'; }
+
+/* ---------------- users ---------------- */
+let uq = '', uf = 'all';
+function rUsers() {
+  const el = $('#p-users');
+  if (!el.dataset.built) { el.dataset.built = 1; el.innerHTML = `<div class="toolbar"><input id="uq" placeholder="🔍 नाम / फ़ोन / देश खोजें"><select id="uf"><option value="all">सब</option><option value="pending">Pending</option><option value="active">Active</option><option value="approved">Approved</option><option value="revoked">Revoked</option><option value="student">Students</option><option value="business">Business</option><option value="online">Online</option></select><button class="btn gold" id="unew">➕ नया user</button></div><div id="ulist" class="users"></div>`; $('#uq').oninput = e => { uq = e.target.value.toLowerCase(); fillUsers(); }; $('#uf').onchange = e => { uf = e.target.value; fillUsers(); }; $('#unew').onclick = openNew; $('#ulist').onclick = e => { const c = e.target.closest('[data-id]'); if (c) openUser(+c.dataset.id); }; }
+  fillUsers();
+}
+function fillUsers() {
+  const us = ST.users.filter(u => (uf === 'all' || uf === u.status || uf === u.mode || (uf === 'online' && u.online)) && (!uq || [u.name, u.phone, u.country, u.city, u.student && u.student.name].join(' ').toLowerCase().includes(uq)));
+  $('#ulist').innerHTML = us.length ? us.map((u, i) => `<div class="card uc" data-id="${u.id}" style="animation-delay:${Math.min(i, 12) * 45}ms"><div class="top"><div class="av">${esc((u.name || '?')[0].toUpperCase())}<span class="dot ${u.online ? 'on' : ''}"></span></div><div style="flex:1;min-width:0"><h4>${esc(u.name)}</h4><small style="color:var(--mut)">${esc(u.phone || 'फ़ोन नहीं')}</small></div><span class="pill ${esc(u.status)}">${esc(u.status)}</span></div>
+    <div class="meta"><span class="pill ${esc(u.mode)}">${u.mode === 'student' ? '🎓 student' : '💼 business'}</span><span class="pill">${flag(u.cc)} ${esc(place(u))}</span><span class="pill">⏱ ${u.minutes7} min/हफ़्ता</span></div>
+    ${u.student ? `<div class="st">🎓 ${esc(u.student.class || '')} · ${u.student.studied}/${u.student.chapters} chapters · quiz ${u.student.quizAvg == null ? '—' : u.student.quizAvg + '%'} · 🔥${u.student.streak}</div>` : ''}
+    <div style="color:var(--mut);font-size:11.5px;margin-top:8px">आख़िरी बार: ${u.online ? '<b style="color:var(--ok)">अभी online</b>' : ago(u.lastSeen)}</div></div>`).join('') : '<div class="empty">कोई user नहीं मिला</div>';
+}
+
+/* ---------------- user detail ---------------- */
+async function openUser(id, quiet) {
+  ST.cur = id;
+  let d; try { d = await api('/api/admin/users/' + id); } catch (e) { return; }
+  if (!d.user) return;
+  const u = d.user, us = d.usage, sd = u.studentFull, bz = u.business, tabsMax = Math.max(1, ...us.tabs.map(t => t.secs)), dayMax = Math.max(1, ...us.days.map(t => t.secs));
+  const wa = u.phone ? 'https://wa.me/' + u.phone.replace(/\D/g, '') + '?text=' + encodeURIComponent('नमस्ते ' + u.name + '! Piyu का आपका password/token:\n' + u.token + '\n(यह सिर्फ़ आपके पहले phone पर चलेगा।)') : '';
+  const body = `<div class="hd"><div class="av">${esc((u.name || '?')[0].toUpperCase())}<span class="dot ${u.online ? 'on' : ''}"></span></div><h2>${esc(u.name)} <span class="pill ${esc(u.status)}">${esc(u.status)}</span></h2><button class="x" id="dx">✕</button></div>
+  <div class="card"><h3>🔑 Password / token</h3><div class="tok" id="tk">${esc(u.token)}</div>
+    <div class="acts"><button class="btn sm" data-a="copy">📋 Copy</button>${wa ? `<a class="btn ok sm" href="${esc(wa)}" target="_blank" rel="noopener" style="text-decoration:none">💬 WhatsApp</a>` : ''}<button class="btn gold sm" data-a="pass">🔐 Password बदलें</button><button class="btn ghost sm" data-a="regen">🔄 नया token</button><button class="btn ghost sm" data-a="reset">📱 Device reset</button></div>
+    <div class="kv" style="margin-top:10px"><div><small>Device</small>${u.bound ? esc(u.device) + ' · ' + when(u.bound) : 'अभी कोई नहीं जुड़ा'}</div><div><small>फ़ोन</small>${esc(u.phone || '—')}</div><div><small>बना</small>${when(u.created)}</div><div><small>मंज़ूर</small>${when(u.approved)}</div></div></div>
+  <div class="acts">${u.status === 'pending' ? '<button class="btn ok" data-a="approve">✅ Approve</button>' : ''}${u.status === 'revoked' ? '<button class="btn ok" data-a="restore">♻ Restore</button>' : u.status !== 'pending' ? '<button class="btn bad sm" data-a="revoke">⛔ Revoke</button>' : ''}<a class="btn ghost sm" href="#" data-a="export" style="text-decoration:none">⬇ Data export</a><button class="btn bad sm" data-a="delete">🗑 Delete</button></div>
+  <div class="grid g2" style="margin-top:14px">
+  <div class="card"><h3>🎛 Features on/off</h3>${Object.keys(FEATS).map(k => `<div class="sw"><span>${FEATS[k][0]} ${FEATS[k][1]}</span><label><input type="checkbox" data-f="${k}" ${u.features[k] ? 'checked' : ''}><span class="tr"></span></label></div>`).join('')}</div>
+  <div class="card"><h3>📍 कहाँ से login</h3><div class="kv"><div><small>देश / शहर</small>${flag(u.cc)} ${esc(place(u))}</div><div><small>IP</small>${esc(u.lastIp || '—')}</div><div><small>Device</small>${esc(shortUA(u.ua))}</div><div><small>आख़िरी बार</small>${u.online ? '🟢 अभी online' : ago(u.lastSeen)}</div><div><small>पहली बार</small>${when(u.firstSeen)}</div><div><small>कुल sessions</small>${us.sessions}</div></div></div></div>
+  <div class="grid g2" style="margin-top:14px">
+  <div class="card"><h3>⏱ किस page पर कितना समय (30 दिन) <span class="pill">${fmtDur(us.total)}</span></h3>${us.tabs.length ? us.tabs.map(t => `<div class="row"><div class="g"><b>${esc(TABN[t.tab] || t.tab)}</b>${bar(t.secs / tabsMax)}</div><span class="pill">${fmtDur(t.secs)}</span></div>`).join('') : '<div class="empty">अभी data नहीं</div>'}</div>
+  <div class="card"><h3>📅 रोज़ का समय (मिनट)</h3><div class="chart" style="height:130px">${us.days.map((t, i) => `<div class="c"><span class="v">${Math.round(t.secs / 60) || ''}</span><div class="b y" style="height:${Math.max(3, t.secs / dayMax * 100)}%;animation-delay:${i * 40}ms"></div><small>${esc(t.day.slice(8))}</small></div>`).join('') || '<div class="empty">—</div>'}</div></div></div>
+  ${sd ? `<div class="card sec"><h3>🎓 Student की पूरी जानकारी</h3><div class="kv">${[['नाम', sd.profile.sname], ['उम्र', sd.profile.sage], ['Mobile', sd.profile.sphone], ['Class / Course', sd.profile.sclass], ['Board', sd.profile.sboard], ['School / College', sd.profile.sschool], ['माध्यम', sd.profile.smedium], ['लक्ष्य', sd.profile.sgoalText], ['Subjects', sd.profile.ssubjects], ['सबसे कमज़ोर (खुद बताया)', sd.profile.sweakest], ['रोज़ का लक्ष्य', sd.profile.sgoal ? sd.profile.sgoal + ' min' : ''], ['पढ़ने का समय', sd.profile.window], ['Auto mode', sd.profile.auto ? 'ON' : 'OFF']].map(([k, v]) => `<div><small>${k}</small>${esc(v || '—')}</div>`).join('')}</div>
+    <div class="grid g4" style="margin-top:12px"><div class="card kpi"><b>${sd.chaptersStudied}/${sd.chaptersTotal}</b><span>chapters पढ़े</span></div><div class="card kpi"><b>${sd.quizAvg == null ? '—' : sd.quizAvg + '%'}</b><span>Quiz औसत (${sd.quizzes})</span></div><div class="card kpi gold"><b>🔥 ${sd.streak}</b><span>दिन की streak</span></div><div class="card kpi"><b>${sd.minutesWeek}</b><span>मिनट इस हफ़्ते (कुल ${sd.minutesTotal})</span></div></div>
+    <div class="grid g2" style="margin-top:12px"><div><h3 style="font-size:13px;color:var(--gold2);margin-bottom:6px">📚 Courses</h3>${sd.courses.length ? sd.courses.map(c => `<div class="row"><div class="g"><b>${esc(c.name)}</b><small>${c.studied}/${c.chapters} chapters · ${c.minutes} min${c.acc == null ? '' : ' · quiz ' + c.acc + '%'}${c.exam ? ' · परीक्षा ' + new Date(c.exam).toLocaleDateString('en-IN') : ''}</small>${bar(c.chapters ? c.studied / c.chapters : 0, c.acc != null && c.acc < 50 ? 'bad' : c.acc != null && c.acc < 75 ? 'warn' : 'good')}</div></div>`).join('') : '<div class="empty">कोई course नहीं</div>'}</div>
+    <div><h3 style="font-size:13px;color:var(--gold2);margin-bottom:6px">⚠ कमज़ोर topics</h3>${sd.weak.length ? sd.weak.map(w => `<div class="row"><div class="g"><b>${esc(w.chapter)}</b><small>${esc(w.course)}</small></div><span class="pill revoked">${w.acc}%</span></div>`).join('') : '<div class="empty">✅ कोई नहीं</div>'}
+      <h3 style="font-size:13px;color:var(--gold2);margin:12px 0 6px">🃏 Flashcards</h3><div class="kv"><div><small>कुल</small>${sd.cards.total}</div><div><small>दोहराने हैं</small>${sd.cards.due}</div><div><small>पक्के</small>${sd.cards.mature}</div><div><small>गलतियों से</small>${sd.cards.mistakes}</div></div>
+      <h3 style="font-size:13px;color:var(--gold2);margin:12px 0 6px">🗓 Study sessions</h3><div class="kv"><div><small>तय</small>${sd.sessions.planned}</div><div><small>पूरे</small>${sd.sessions.done}</div></div></div></div>
+    ${sd.lastQuizzes.length ? `<h3 style="font-size:13px;color:var(--gold2);margin:12px 0 6px">🕘 आख़िरी quizzes</h3>${sd.lastQuizzes.map(q => `<div class="row"><div class="g"><b>${esc(q.course)}</b><small>${when(q.at)}</small></div><b>${q.got}/${q.max}</b></div>`).join('')}` : ''}</div>` : ''}
+  <div class="card sec"><h3>💼 काम और documents</h3><div class="kv"><div><small>कुल काम</small>${bz.tasks}</div><div><small>पूरे</small>${bz.done}</div><div><small>बाकी</small>${bz.pending}</div><div><small>छूटे</small>${bz.overdue}</div><div><small>Documents</small>${bz.docs}</div><div><small>Data size</small>${(u.stats.bytes / 1048576).toFixed(2)} MB</div></div></div>
+  <div class="grid g2 sec"><div class="card"><h3>🖥 हाल के sessions</h3><div class="tw"><table class="tbl"><tr><th>कब</th><th>कहाँ</th><th>Device</th><th>समय</th></tr>${d.sessions.map(s => `<tr><td>${when(s.start)}</td><td>${flag(s.cc)} ${esc(place(s))}<br><small style="color:var(--mut)">${esc(s.ip)}</small></td><td>${esc(shortUA(s.ua))}</td><td>${fmtDur(s.secs)}</td></tr>`).join('') || '<tr><td colspan=4>—</td></tr>'}</table></div></div>
+  <div class="card"><h3>📝 Admin note</h3><textarea id="note" rows="5" placeholder="इस user के बारे में note…">${esc(u.note || '')}</textarea><div class="acts"><button class="btn sm" data-a="note">💾 सहेजें</button></div></div></div>`;
+  const dr = $('#dr'), sc = dr.scrollTop; dr.innerHTML = body; $('#drawer').hidden = false; dr.scrollTop = quiet ? sc : 0; animateAll(dr);
+  $('#dx').onclick = () => { $('#drawer').hidden = true; ST.cur = null; };
+  dr.querySelectorAll('[data-f]').forEach(c => c.onchange = async () => { const f = {}; dr.querySelectorAll('[data-f]').forEach(x => f[x.dataset.f] = x.checked); const r = await api('/api/admin/users/' + id + '/features', { json: { features: f } }); toast('✅ Features बदल गए'); if (r.features) dr.querySelectorAll('[data-f]').forEach(x => x.checked = !!r.features[x.dataset.f]); });
+  dr.onclick = async e => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a; e.preventDefault();
+    if (a === 'copy') { try { await navigator.clipboard.writeText(u.token); toast('📋 Copy हो गया'); } catch (er) { toast('Copy नहीं हुआ'); } return; }
+    if (a === 'pass') { openPw(u); return; }
+    if (a === 'note') { await api('/api/admin/users/' + id + '/note', { json: { note: $('#note').value } }); toast('💾 सहेजा'); return; }
+    if (a === 'export') { const r = await api('/api/admin/users/' + id + '/export', { raw: true }); const bl = await r.blob(); const l = document.createElement('a'); l.href = URL.createObjectURL(bl); l.download = 'piyu-user-' + id + '.json'; l.click(); return; }
+    if (a === 'delete' && !confirm(u.name + ' का सारा data हमेशा के लिए हटाएँ?')) return;
+    if (a === 'revoke' && !confirm(u.name + ' को बंद करें?')) return;
+    if ((a === 'regen' || a === 'reset') && !confirm(a === 'regen' ? 'नया token बनेगा; पुराना तुरंत बंद।' : 'Device binding हटाएँ?')) return;
+    await api('/api/admin/users/' + id + '/' + a, { json: {} });
+    if (a === 'delete') { $('#drawer').hidden = true; ST.cur = null; toast('🗑 हटा दिया'); } else if (a === 'approve') { toast('✅ Approved — अब token भेजिए'); confetti(); } else toast('✅ हो गया');
+    await refresh(); if (a !== 'delete') openUser(id, true);
+  };
+}
+function randPass() { const c = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789@#$%'; const a = crypto.getRandomValues(new Uint8Array(12)); return [...a].map(x => c[x % c.length]).join(''); }
+let pwUser = null;
+function openPw(u) { pwUser = u; $('#pwFor').textContent = u.name + ' — पुराना password तुरंत बंद हो जाएगा'; $('#pwNew').value = ''; $('#pwMsg').textContent = ''; $('#pwDlg').showModal(); }
+$('#pwGen').onclick = () => { $('#pwNew').value = randPass(); }; $('#pwCancel').onclick = () => $('#pwDlg').close();
+$('#pwSave').onclick = async () => { const r = await api('/api/admin/users/' + pwUser.id + '/setpass', { json: { password: $('#pwNew').value.trim() } }); if (r.error) { $('#pwMsg').textContent = '⚠ ' + (r.error === 'weak' ? '8–64 अक्षर, बिना space के' : r.error === 'taken' ? 'यह password पहले से किसी और का है' : r.error); return; } $('#pwDlg').close(); toast('🔐 Password बदल गया'); await refresh(); openUser(pwUser.id, true); };
+function openNew() {
+  $('#nuName').value = ''; $('#nuPhone').value = ''; $('#nuPass').value = ''; $('#nuMsg').textContent = ''; $('#nuFeat').innerHTML = Object.keys(FEATS).map(k => `<div class="sw"><span>${FEATS[k][0]} ${FEATS[k][1]}</span><label><input type="checkbox" data-nf="${k}" checked><span class="tr"></span></label></div>`).join(''); $('#newDlg').showModal();
+}
+$('#nuGen').onclick = () => { $('#nuPass').value = randPass(); }; $('#nuCancel').onclick = () => $('#newDlg').close();
+$('#nuSave').onclick = async () => { const f = {}; $$('[data-nf]').forEach(x => f[x.dataset.nf] = x.checked); const r = await api('/api/admin/users', { json: { name: $('#nuName').value, phone: $('#nuPhone').value, password: $('#nuPass').value.trim() || undefined, features: f } }); if (r.error) { $('#nuMsg').textContent = '⚠ ' + ({ name: 'नाम 2–60 अक्षर का होना चाहिए', weak: 'Password 8–64 अक्षर, बिना space के', taken: 'यह password पहले से इस्तेमाल में है' }[r.error] || r.error); return; } $('#newDlg').close(); toast('✅ User बन गया'); confetti(); await refresh(); openUser(r.user.id); };
+
+/* ---------------- security / logs / settings ---------------- */
+function rSec() { const o = ST.ov; $('#p-sec').innerHTML = `<div class="grid g2"><div class="card"><h3>🛡 Security घटनाएँ</h3>${secList(o.security)}</div><div class="card"><h3>🔐 हाल के logins</h3>${o.logins.length ? o.logins.map(l => `<div class="row"><span class="flag">${flag(l.cc)}</span><div class="g"><b>${esc((ST.users.find(u => u.id === l.uid) || { name: l.uid ? '#' + l.uid : 'Owner' }).name)}</b><small>${esc(place(l))} · ${esc(l.ip)} · ${esc(shortUA(l.ua))} · ${when(l.at)}</small></div></div>`).join('') : '<div class="empty">—</div>'}</div></div>`; }
+function rLogs() { const o = ST.ov; $('#p-logs').innerHTML = `<div class="card"><h3>📜 Admin की गतिविधि (audit)</h3>${o.audit.length ? `<div class="tw"><table class="tbl"><tr><th>कब</th><th>क्या</th><th>किसके लिए</th><th>विवरण</th></tr>${o.audit.map(a => `<tr><td>${when(a.at)}</td><td><b>${esc(a.action)}</b></td><td>${esc(a.target)}</td><td>${esc(a.detail)}</td></tr>`).join('')}</table></div>` : '<div class="empty">—</div>'}<p style="color:var(--mut);font-size:12px;margin-top:8px">🔒 Passwords कभी log में नहीं लिखे जाते।</p></div>`; }
+function rSet() {
+  const o = ST.ov;
+  $('#p-set').innerHTML = `<div class="grid g2"><div class="card"><h3>📢 सभी users को संदेश (announcement)</h3><textarea id="ann" rows="3" maxlength="300" placeholder="जैसे: कल रात 10 बजे maintenance होगा">${esc(o.announcement || '')}</textarea><div class="acts"><button class="btn gold sm" id="annSave">📤 भेजें</button><button class="btn ghost sm" id="annClr">हटाएँ</button></div><p style="color:var(--mut);font-size:12px;margin-top:8px">यह हर user को app में ऊपर दिखता है।</p></div>
+  <div class="card"><h3>✉ Admin login (Email + Password)</h3><p style="color:var(--mut);font-size:13px">अभी: <b>${esc(o.adminEmail || 'सेट नहीं')}</b>. बदलने पर पुराने सारे login बंद हो जाते हैं। Owner PIN / token से login हमेशा चलता रहेगा।</p><label style="display:block;margin:8px 0;color:var(--mut);font-size:12px">Email<input id="cEmail" type="email" value="${esc(o.adminEmail || '')}" autocomplete="off"></label><label style="display:block;margin:8px 0;color:var(--mut);font-size:12px">नया Password (कम से कम 8 अक्षर)<input id="cPass" type="password" autocomplete="new-password"></label><div class="msg" id="cMsg"></div><div class="acts"><button class="btn gold sm" id="cSave">💾 सेट करें</button></div></div>
+  <div class="card"><h3>💾 Backup</h3><p style="color:var(--mut);font-size:13px">सारे databases (आपका, users के, access registry) की एक zip file — सुरक्षित जगह रखिए, इसमें सबके tokens हैं।</p><div class="acts"><button class="btn sm" id="bk">⬇ Backup download</button></div></div>
+  <div class="card"><h3>📍 Tracking के बारे में</h3><p style="color:var(--mut);font-size:13px;line-height:1.55">• हर user की app खुली रहने पर हर 30 सेकंड में एक छोटा संकेत जाता है: कौन सा page खुला है और कितने सेकंड दिखा।<br>• Country/शहर IP address से पता चलता है (मुफ़्त ip-api.com से, एक बार; local server में cache रहता है)। GeoIP अभी: <b>${o.geoip ? 'ON' : 'OFF'}</b>. बंद करने के लिए server पर <code>PIYU_GEOIP=0</code> रखें।<br>• Users को इसकी जानकारी app की Settings में दी जाती है।</p></div></div>`;
+  $('#cSave').onclick = async () => { const r = await api('/api/admin/credentials', { json: { email: $('#cEmail').value, password: $('#cPass').value } }); if (r.error) { $('#cMsg').textContent = '⚠ ' + ({ email: 'Email सही नहीं है', weak: 'Password कम से कम 8 अक्षर का हो' }[r.error] || r.error); return; } $('#cPass').value = ''; toast('✅ Admin login सेट हो गया — दोबारा login कीजिए'); SESS = ''; try { localStorage.removeItem('piyu.adminS'); } catch (e) { } setTimeout(() => location.reload(), 1200); };
+  $('#annSave').onclick = async () => { await api('/api/admin/announce', { json: { text: $('#ann').value } }); toast('📢 भेज दिया'); refresh(); };
+  $('#annClr').onclick = async () => { await api('/api/admin/announce', { json: { text: '' } }); $('#ann').value = ''; toast('हटा दिया'); refresh(); };
+  $('#bk').onclick = async () => { const r = await api('/api/admin/backup', { raw: true }); const bl = await r.blob(); const l = document.createElement('a'); l.href = URL.createObjectURL(bl); l.download = 'piyu-backup-' + new Date().toISOString().slice(0, 10) + '.zip'; l.click(); toast('⬇ Backup बन गया'); };
+}
+mountFX();
+if (SESS || TOKEN) login(true);
 </script>
 </body>
 </html>

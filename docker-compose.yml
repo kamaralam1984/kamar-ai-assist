@@ -1,0 +1,31 @@
+# docker compose up -d            -> Piyu on http://localhost:8080
+# Put your secrets in a file named .env next to this one (never commit it):  PIYU_TOKEN=a-long-random-string
+services:
+  piyu:
+    build: .
+    image: piyu:latest
+    container_name: piyu
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PIYU_PORT_HOST:-8080}:8080"          # only this machine; put nginx / Caddy in front for HTTPS
+    environment:
+      PIYU_TOKEN: ${PIYU_TOKEN:?set PIYU_TOKEN in .env}
+      PIYU_GEOIP: ${PIYU_GEOIP:-1}
+      PIYU_TZ_MIN: ${PIYU_TZ_MIN:-330}
+      PIYU_OLLAMA: ${PIYU_OLLAMA:-http://host.docker.internal:11434}   # local AI (Ollama) running on the host, optional
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - piyu-data:/data
+      - ./voices:/app/voices:ro                            # Piper voices (deploy/fetch_voices.sh downloads them)
+    mem_limit: 1200m
+    cpus: "1.0"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  piyu-data:

@@ -65,7 +65,7 @@
     return new Blob(parts, { type: 'application/pdf' });
   }
   async function optimizePdf(file, o) {
-    o = Object.assign({ minSize: 1200 * KB, maxPages: 20, maxSide: 1500, q: 0.72, bytesPerPage: 220 * KB, onProgress: null }, o || {});
+    o = Object.assign({ minSize: 1200 * KB, maxPages: 150, maxSide: 1500, q: 0.72, bytesPerPage: 220 * KB, onProgress: null }, o || {});
     if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) return same(file);
     if (file.size < o.minSize) return same(file);
     let doc;
@@ -91,14 +91,73 @@
     return { blob: new File([out], file.name, { type: 'application/pdf' }), changed: true, from: file.size, to: out.size, kind: 'pdf', pages: n };
   }
 
+
+  /* ---------------- Word / PowerPoint / Excel: shrink the big pictures inside (a .docx/.pptx is a zip), keep everything else byte-for-byte ---------------- */
+  const inflateRaw = async u8 => new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = u8 => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  function readZip(u8) {
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength); let e = u8.length - 22;
+    while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+    if (e < 0) return null;
+    const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true); const ents = [];
+    for (let i = 0; i < n; i++) {
+      if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) return null;
+      const nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true), lho = dv.getUint32(p + 42, true);
+      if (csize === 0xFFFFFFFF || usize === 0xFFFFFFFF || lho === 0xFFFFFFFF) return null;                  // zip64: leave such files alone
+      ents.push({ name: new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nl)), method: dv.getUint16(p + 10, true), crc: dv.getUint32(p + 16, true), csize, usize, lho, cd: u8.slice(p, p + 46 + nl + el + cl) });
+      p += 46 + nl + el + cl;
+    }
+    return ents;
+  }
+  async function shrinkPicture(bytes, name, o) {
+    const png = /\.png$/i.test(name), type = png ? 'image/png' : 'image/jpeg';
+    let bmp; try { bmp = await createImageBitmap(new Blob([bytes], { type })); } catch (e) { return null; }
+    const scale = Math.min(1, o.maxSide / Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+    if (!png) { x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); }
+    x.imageSmoothingQuality = 'high'; x.drawImage(bmp, 0, 0, w, h); if (bmp.close) try { bmp.close(); } catch (e) { }
+    let blob = await toBlob(c, type, 0.8);
+    if (!png) for (let q = 0.8; blob && blob.size > bytes.length * 0.7 && q > 0.55;) { q -= 0.08; blob = await toBlob(c, type, q); }
+    if (!blob || blob.size > bytes.length * 0.8) return null;
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  async function optimizeOffice(file, o) {
+    o = Object.assign({ minSize: 1500 * KB, maxSide: 1600, minPic: 150 * KB, onProgress: null }, o || {});
+    if (!/\.(docx|pptx|xlsx)$/i.test(file.name || '') || file.size < o.minSize || typeof DecompressionStream === 'undefined') return same(file);
+    const u8 = new Uint8Array(await file.arrayBuffer()), ents = readZip(u8); if (!ents) return same(file);
+    const pics = ents.filter(e => /(^|\/)media\/[^/]+\.(png|jpe?g)$/i.test(e.name) && e.usize >= o.minPic && (e.method === 0 || e.method === 8)); if (!pics.length) return same(file);
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), parts = [], cds = []; let off = 0, k = 0;
+    const raw = e => { const s = e.lho + 30 + dv.getUint16(e.lho + 26, true) + dv.getUint16(e.lho + 28, true); return u8.subarray(s, s + e.csize); };
+    for (const e of ents) {
+      let data = raw(e), method = e.method, crc = e.crc, usize = e.usize;
+      if (pics.includes(e)) {
+        if (o.onProgress) o.onProgress(++k, pics.length);
+        try { const full = e.method === 8 ? await inflateRaw(data) : data, small = await shrinkPicture(full, e.name, o); if (small) { data = small; method = 0; crc = crc32(small); usize = small.length; } } catch (er) { }
+      }
+      const nameB = new TextEncoder().encode(e.name), lh = new Uint8Array(30 + nameB.length), lv = new DataView(lh.buffer);
+      lh.set(u8.subarray(e.lho + 10, e.lho + 14), 10);                         // time + date of the original entry
+      lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true); lv.setUint16(8, method, true);
+      lv.setUint32(14, crc, true); lv.setUint32(18, data.length, true); lv.setUint32(22, usize, true); lv.setUint16(26, nameB.length, true); lh.set(nameB, 30);
+      const cd = e.cd.slice(), cv = new DataView(cd.buffer); cv.setUint16(8, 0x0800, true); cv.setUint16(10, method, true); cv.setUint32(16, crc, true); cv.setUint32(20, data.length, true); cv.setUint32(24, usize, true); cv.setUint32(42, off, true);
+      parts.push(lh, data); cds.push(cd); off += lh.length + data.length;
+    }
+    const cdSize = cds.reduce((a, c) => a + c.length, 0), end = new Uint8Array(22), ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, ents.length, true); ev.setUint16(10, ents.length, true); ev.setUint32(12, cdSize, true); ev.setUint32(16, off, true);
+    const out = new Blob([...parts, ...cds, end], { type: file.type || 'application/octet-stream' });
+    if (out.size >= file.size * 0.85) return same(file);
+    return { blob: new File([out], file.name, { type: file.type }), changed: true, from: file.size, to: out.size, kind: 'office', pics: pics.length };
+  }
+
   async function optimize(file, o) {
     try {
       if (/^image\//.test(file.type)) return await optimizeImage(file, o);
       if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) return await optimizePdf(file, o);
+      if (/\.(docx|pptx|xlsx)$/i.test(file.name || '')) return await optimizeOffice(file, o);
     } catch (e) { console.warn('media', e); }
     return same(file);
   }
   const fmt = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
-  root.PiyuMedia = { optimize, optimizeImage, optimizePdf, buildPdf, fmt };
+  root.PiyuMedia = { optimize, optimizeImage, optimizePdf, optimizeOffice, buildPdf, fmt, readZip, crc32, MAX_UPLOAD: 100 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PiyuMedia;
 })(typeof self !== 'undefined' ? self : this);

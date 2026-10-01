@@ -58,6 +58,7 @@
 </dialog>
 
 <div id="app" hidden>
+  <div id="annBar" class="annBar" hidden role="status">📢 <span id="annTxt"></span><button type="button" id="annX" aria-label="Close">✕</button></div>
   <header>
     <div class="who">
       <div class="orb" id="orb"><i></i><i></i><i></i></div>
@@ -137,6 +138,10 @@
 
     <!-- SETTINGS -->
     <section id="tab-set" class="tab">
+      <div class="card" id="privCard">
+        <h3>🔒 आपकी गोपनीयता</h3>
+        <p class="hint">Admin को दिखता है: आपका नाम, आप किस देश/शहर से आए, app कितनी देर खुली रही और किस page पर कितना समय बीता। आपके documents और जवाब सिर्फ़ आपके अपने account में रहते हैं।</p>
+      </div>
       <div class="card" id="setModeCard">
         <h3>👤 खाते का प्रकार</h3>
         <div class="modeCards sm"><button type="button" class="modeCard stu" data-mode="student"><span class="mi">🎓</span><b>Student</b></button><button type="button" class="modeCard biz" data-mode="business"><span class="mi">💼</span><b>Business</b></button></div>

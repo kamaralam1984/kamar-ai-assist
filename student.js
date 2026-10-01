@@ -239,8 +239,10 @@
   async function importFiles(co, files, onMsg) {
     let added = 0;
     for (const f of files) {
+      if (f.size > PiyuMedia.MAX_UPLOAD) throw new Error(_t("{0} बहुत बड़ी है (अधिकतम 100 MB)", [f.name]));
       onMsg(_t("⏳ {0} पढ़ रही हूँ…", [f.name]));
-      const blocks = await C.fileToBlocks(f, { langs: S.settings.ocrLang, onProgress: (st, fr, p, n) => onMsg('🔍 ' + f.name + ' — OCR' + (n > 1 ? ' ' + p + '/' + n : '') + ' ' + Math.round((fr || 0) * 100) + '%') });
+      let src = f; if (/^image\//.test(f.type) && f.size > 1024 * 1024) { try { const r = await PiyuMedia.optimizeImage(f); if (r.changed) src = r.blob; } catch (e) { } }
+      const blocks = await C.fileToBlocks(src, { langs: S.settings.ocrLang, onProgress: (st, fr, p, n) => onMsg('🔍 ' + f.name + ' — OCR' + (n > 1 ? ' ' + p + '/' + n : '') + ' ' + Math.round((fr || 0) * 100) + '%') });
       if (!blocks.length) throw new Error(f.name + ': ' + _t("Document खाली है या पढ़ा नहीं जा सका।"));
       S.docs = S.docs.filter(d => !(d.name === f.name && (co.docIds || []).includes(d.id)));
       const doc = { id: uid(), name: f.name, added: Date.now(), blocks: blocks.map(b => ({ k: b.k, t: b.t })), rules: [] };
@@ -262,7 +264,7 @@
     dlg.innerHTML = `<h3>${courseEdit ? '✏ ' + esc(_t('Course बदलें')) : '➕ ' + esc(_t('नया course'))}</h3>
       <label>${esc(_t('Course / Subject का नाम'))}<input id="cName" value="${esc(co.name || '')}" placeholder="${esc(_t('जैसे: Biology, Class 10 Maths'))}"></label>
       <label>${esc(_t('परीक्षा की तारीख (ज़रूरी नहीं)'))}<input id="cExam" type="date" value="${co.exam ? dkey(co.exam) : ''}"></label>
-      <label>${esc(_t('Notes / book / PDF / photo जोड़ें'))}<input id="cFiles" type="file" accept="${FILE_ACCEPT}" multiple></label>
+      ${featOn('docs') ? `<label>${esc(_t('Notes / book / PDF / photo जोड़ें'))}<input id="cFiles" type="file" accept="${FILE_ACCEPT}" multiple></label>` : `<p class="hint">${esc(_t('Admin ने documents upload बंद किया है'))}</p><input id="cFiles" type="file" hidden>`}
       ${free.length ? `<div class="hint">${esc(_t('या पहले से जुड़े documents चुनें:'))}</div>` + free.map(d => `<label class="chk"><input type="checkbox" class="cDoc" value="${esc(d.id)}"> ${esc(d.name)}</label>`).join('') : ''}
       <div class="hint" id="cMsg" role="status"></div>
       <div class="btns"><button class="btn ghost" id="cCancel" type="button">${esc(_t('रद्द करें'))}</button><button class="btn primary" id="cSave" type="button">${esc(_t('सहेजें'))}</button></div>`;
@@ -344,11 +346,12 @@
     teach(_t2('{0}, इसे ऐसे समझिए। ', [tName()], '{0}, understand it like this. ', [tName()]) + pts.join(' '), { interrupt: true });
   }
   /* ---------------- overlay (reader / quiz / cards share one full-screen layer) ---------------- */
-  function ov(html) {
+  function ov(html, name) {
+    window.__ovTab = name || 'reader';
     let o = el('sOv'); if (!o) { document.body.insertAdjacentHTML('beforeend', '<div id="sOv" class="s-ov" hidden></div>'); o = el('sOv'); }
     o.innerHTML = '<div class="s-ovin">' + html + '</div>'; o.hidden = false; document.body.classList.add('ov-open'); o.scrollTop = 0; return o;
   }
-  function closeOv() { const o = el('sOv'); if (o) { o.hidden = true; o.innerHTML = ''; } document.body.classList.remove('ov-open'); stopSpeaking(); clearInterval(quiz && quiz.timer); }
+  function closeOv() { window.__ovTab = ''; const o = el('sOv'); if (o) { o.hidden = true; o.innerHTML = ''; } document.body.classList.remove('ov-open'); stopSpeaking(); clearInterval(quiz && quiz.timer); }
 
   /* ---------------- sign-up: the student's full details (animated step by step) ---------------- */
   const WIZ_STEPS = 5;
@@ -368,6 +371,7 @@
     else if (n === 3) { title = '⏰ ' + _t('पढ़ने का समय'); body = `<div class="wrow">${wizField('w_from', _t('शुरू'), d.from, 'time')}${wizField('w_to', _t('खत्म'), d.to, 'time')}</div>` + `<label class="wf">${esc(_t('रोज़ का लक्ष्य (मिनट)'))}<select id="w_gmin">${[30, 60, 90, 120, 180, 240].map(v => `<option ${+d.sgoal === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` + `<label class="wf">${esc(_t('एक session कितने मिनट का'))}<select id="w_sess">${[20, 25, 30, 40, 45, 60].map(v => `<option ${+d.session === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` + `<div class="wf">${esc(_t('किन दिनों पढ़ेंगे'))}<div class="s-chips" id="w_days">${WD().map((w, i) => `<button type="button" class="s-chip ${d.days.includes(i) ? 'on' : ''}" data-d="${i}">${esc(w)}</button>`).join('')}</div></div>`; }
     else { title = '🎓 ' + _t('तैयार!'); body = `<div class="wf"><p class="hint">${esc(_t('मैं आपकी Teacher हूँ। मैं आपका नाम, class, लक्ष्य, क्या पढ़ा और क्या बाकी है — सब याद रखूँगी, और आपकी आदतों से सीखकर plan और सवाल बेहतर करती रहूँगी।'))}</p></div>
       <label class="chk"><input type="checkbox" id="w_auto" ${d.sauto ? 'checked' : ''}> ${esc(_t('Auto mode: plan, alarm और quiz मैं खुद बनाऊँ'))}</label>
+      <p class="hint">🔒 ${esc(_t('Admin आपका नाम, देश और app का समय देख सकता है; आपके documents और जवाब सिर्फ़ आपके हैं।'))}</p>
       <div class="s-sum"><b>${esc(d.sname || '—')}</b> · ${esc(d.sclass || '—')}${d.sboard ? ' · ' + esc(d.sboard) : ''}<br><small>${esc(d.sgoalText || '')}</small><br><small>⏰ ${esc(d.from)}–${esc(d.to)} · ${esc(String(d.sgoal))} ${esc(_t('मिनट रोज़'))}</small></div>
       <button class="s-btn" type="button" id="w_hear">🔊 ${esc(_t('Teacher की आवाज़ सुनें'))}</button>`; }
     dlg.innerHTML = `<div class="wiz-top"><div class="s-line"><i style="width:${Math.round((n + 1) / WIZ_STEPS * 100)}%"></i></div><small>${esc(_t('चरण {0} / {1}', [n + 1, WIZ_STEPS]))}</small></div>
@@ -503,7 +507,7 @@
         <div class="s-qtext">${esc(q.q)}</div>
         ${q.type === 'mcq' ? `<div class="s-opts">${q.options.map((o, i) => `<button class="s-opt" data-act="opt" data-i="${i}"><b>${letters[i]}</b><span>${esc(o)}</span></button>`).join('')}</div>`
         : `<textarea id="qAns" class="s-ans" rows="${q.marks >= 5 ? 9 : 4}" placeholder="${esc(_t('अपना उत्तर यहाँ लिखिए…'))}"></textarea><div class="s-acts"><button class="s-btn gold" data-act="check">${esc(quiz.exam ? _t('अगला') : _t('जाँचें'))}</button><button class="s-btn ghost" data-act="skip">${esc(_t('छोड़ें'))}</button></div>`}
-        <div id="qFb"></div></div>`);
+        <div id="qFb"></div></div>`, 'quiz');
     tickQuiz(); quiz.answered = false;
     if (!quiz.exam) setTimeout(() => speakQ(q), 350);
   }
@@ -615,7 +619,7 @@
     ov(`<div class="s-ovh"><button class="s-x" data-act="closeov">✕</button><div class="s-qprog"><div class="s-line"><i style="width:${Math.round(deck.i / n * 100)}%"></i></div><small>${esc(_t('Card {0} / {1}', [deck.i + 1, n]))} · ${esc(co.name || '')}${c.kind === 'mistake' ? ' · 🧠' : ''}</small></div></div>
       <div class="s-flipwrap"><div class="s-flip ${deck.flipped ? 'on' : ''}" id="sFlip" data-act="cflip"><div class="s-face f"><small>${esc(_t('सवाल'))}</small><p>${esc(c.front)}</p><em>${esc(_t('उत्तर देखने के लिए छुएँ'))}</em></div><div class="s-face b"><small>${esc(_t('उत्तर'))}</small><p>${esc(c.back)}</p></div></div></div>
       <div class="s-acts center"><button class="s-btn ghost" data-act="chear">🔊 ${esc(_t('सुनें'))}</button></div>
-      <div class="s-rate" id="sRate" ${deck.flipped ? '' : 'hidden'}>${[[0, _t('फिर से'), 'again'], [1, _t('कठिन'), 'hard'], [2, _t('ठीक'), 'good'], [3, _t('आसान'), 'easy']].map(([q, l, k]) => `<button class="s-r ${k}" data-act="crate" data-q="${q}"><b>${esc(l)}</b><small>${SY.nextLabel(c, q)}</small></button>`).join('')}</div>`);
+      <div class="s-rate" id="sRate" ${deck.flipped ? '' : 'hidden'}>${[[0, _t('फिर से'), 'again'], [1, _t('कठिन'), 'hard'], [2, _t('ठीक'), 'good'], [3, _t('आसान'), 'easy']].map(([q, l, k]) => `<button class="s-r ${k}" data-act="crate" data-q="${q}"><b>${esc(l)}</b><small>${SY.nextLabel(c, q)}</small></button>`).join('')}</div>`, 'cards');
     if (S.settings.steacher !== false && !deck.flipped) say(c.front.replace(/_____/g, _t('खाली जगह')), { mood: 'gentle', interrupt: true });
   }
   function flipCard() {

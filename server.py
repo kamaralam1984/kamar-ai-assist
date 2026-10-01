@@ -13,6 +13,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 import db
+import adminlib
 import web
 import access
 
@@ -80,6 +81,21 @@ def reg_ok(ip, limit=5, per=3600):
             return False
         _REGS[ip].append(now)
         return True
+
+
+_SECLOG = {}
+def sec_log(kind, ip, detail=''):
+    """security events for the admin panel (one line per kind+IP per minute, so a flood cannot fill the log)"""
+    k, now = (kind, ip), time.time()
+    if now - _SECLOG.get(k, 0) < 60 or ACC is None:
+        return
+    _SECLOG[k] = now
+    if len(_SECLOG) > 2000:
+        _SECLOG.clear()
+    try:
+        ACC.sec(kind, ip, detail)
+    except Exception:
+        pass
 
 
 def dbpath_ready(path):
@@ -205,6 +221,7 @@ def ollama_models():
     except Exception:
         return None
 
+OWNER_NAME = os.environ.get('PIYU_OWNER_NAME', 'Kamar Alam')
 AI_MAX_B = float(os.environ.get('PIYU_AI_MAX_B', '4'))        # never pick a model bigger than this many billion parameters (protects a shared server)
 
 
@@ -260,7 +277,7 @@ class H(SimpleHTTPRequestHandler):
         o = self.headers.get('Origin')
         if o and o in CORS_ORIGINS:
             self.send_header('Access-Control-Allow-Origin', o); self.send_header('Vary', 'Origin')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Content-Encoding, X-Piyu-Token, X-Piyu-Device'); self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Content-Encoding, X-Piyu-Token, X-Piyu-Device, X-Piyu-Admin'); self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
 
     def end_headers(self):
         self.cors()
@@ -287,21 +304,45 @@ class H(SimpleHTTPRequestHandler):
         """-> (ctx, None) or (None, reason).  ctx = {role: owner|user, uid, db, name}"""
         t = token()
         if not t:                                                        # no owner token: a private local server, everything open
-            return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': 'owner'}, None
+            return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': OWNER_NAME}, None
         ip = self.client_ip()
         if fail_blocked(ip):
+            sec_log('locked', ip, 'too many wrong tokens')
             return None, 'locked'
+        sess = self.headers.get('X-Piyu-Admin', '')
+        if sess:                                                         # the owner signed in with e-mail + password
+            if ACC.valid_admin_session(sess):
+                return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': OWNER_NAME, 'via': 'session'}, None
+            fail_add(ip)
+            return None, 'token'
         hdr = self.headers.get('X-Piyu-Token', '')
         if not hdr:
             return None, 'token'
         if hmac.compare_digest(hdr, t):
-            return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': 'owner'}, None
+            return {'role': 'owner', 'uid': 0, 'db': dbpath_ready(DBPATH), 'name': OWNER_NAME}, None
         u, err = ACC.authorize(hdr, self.headers.get('X-Piyu-Device', ''), ip)
         if err:
             if err == 'token':
                 fail_add(ip)
+            sec_log(err if err != 'token' else 'bad-token', ip, err)
             return None, err
-        return {'role': 'user', 'uid': u['id'], 'db': dbpath_ready(ACC.user_db(u['id'])), 'name': u['name']}, None
+        return {'role': 'user', 'uid': u['id'], 'db': dbpath_ready(ACC.user_db(u['id'])), 'name': u['name'], 'features': ACC.feature_map(u), 'user': u}, None
+
+    def has(self, feature):
+        c = self.ctx or {}
+        return c.get('role') == 'owner' or (c.get('features') or {}).get(feature, True)
+
+    def track(self):
+        """the app's heartbeat (every ~30 s while open): which page, how many seconds it was visible"""
+        try:
+            req = json.loads(self.read_body() or b'{}')
+        except Exception:
+            return self.send_json(400, {'error': 'json'})
+        if not rate_ok(self.client_ip() + ':trk', 12, 60):
+            return self.send_json(429, {'error': 'slow down'})
+        ok = ACC.track(self.ctx['uid'], req.get('sid'), self.client_ip(), self.headers.get('User-Agent', ''), self.headers.get('X-Piyu-Device', '')[:8],
+                       req.get('tab'), req.get('dt'), bool(req.get('vis')), req.get('mode'))
+        return self.send_json(200, {'ok': ok, 'announcement': ACC.meta_get('announcement')})
 
     def authed(self):
         self.ctx, self.authErr = self.resolve()
@@ -340,11 +381,16 @@ class H(SimpleHTTPRequestHandler):
             if not rate_ok(self.client_ip(), 60, 60):
                 return self.send_json(429, {'error': 'slow down'})
             return self.send_json(200, {'status': ACC.status_for_device(q.get('device', [''])[0]) if token() else 'none'})
+        if u.path == '/api/admin/login' and method == 'POST':
+            return self.admin_login()
         if not self.authed():
             return self.deny()
         ctx = self.ctx
         if u.path == '/api/me':
-            return self.send_json(200, {'role': ctx['role'], 'name': ctx['name'], 'uid': ctx['uid']})
+            return self.send_json(200, {'role': ctx['role'], 'name': ctx['name'], 'uid': ctx['uid'], 'features': ctx.get('features') or {k: True for k in access.FEATURES},
+                                        'announcement': ACC.meta_get('announcement') if ACC else '', 'track': 30})
+        if u.path == '/api/track' and method == 'POST':
+            return self.track()
         if u.path.startswith('/api/admin/'):
             return self.admin(method, u.path, ctx)
         con = db.connect(ctx['db'])
@@ -364,6 +410,10 @@ class H(SimpleHTTPRequestHandler):
                         assert isinstance(req.get('state'), dict)
                     except Exception:
                         return self.send_json(400, {'error': 'json'})
+                    if not self.has('docs'):                                        # documents switched off for this user: no NEW documents
+                        have = {d['id'] for d in (db.read_state(con) or {}).get('docs', [])}
+                        if any(d.get('id') not in have for d in req['state'].get('docs', [])):
+                            return self.send_json(403, {'error': 'feature', 'feature': 'docs'})
                     rev = db.write_state(con, req['state'], req.get('baseRev'))
                     if rev is None:
                         return self.send_json(409, {'error': 'stale', 'rev': db.get_rev(con)})
@@ -372,6 +422,8 @@ class H(SimpleHTTPRequestHandler):
                     return self.send_json(200, {'rev': rev})
             if u.path == '/api/voices' and method == 'GET':
                 return self.send_json(200, {'voices': [{k: v.get(k) for k in ('id', 'lang', 'name', 'gender', 'desc')} for v in CATALOG if _avail(v)], 'defaults': DEFAULT_ID, 'loaded': list(loaded)})
+            if u.path.startswith(('/api/ai/', '/api/web/')) and not self.has('ai' if u.path.startswith('/api/ai/') else 'web'):
+                return self.send_json(403, {'error': 'feature', 'feature': 'ai' if u.path.startswith('/api/ai/') else 'web'})
             if u.path == '/api/ai/status' and method == 'GET':
                 models = ollama_models()
                 return self.send_json(200, {'available': bool(models), 'models': models or [], 'chosen': pick_model(models, q.get('model', [None])[0]) if models else None})
@@ -402,6 +454,8 @@ class H(SimpleHTTPRequestHandler):
                     self.wfile.write(r[1])
                     return
                 if method == 'PUT':
+                    if not self.has('docs'):
+                        return self.send_json(403, {'error': 'feature', 'feature': 'docs'})
                     body = self.read_body()
                     if body is None:
                         return self.send_json(413, {'error': 'too big'})
@@ -430,48 +484,170 @@ class H(SimpleHTTPRequestHandler):
             return self.send_json(400 if err != 'full' else 503, {'error': err})
         return self.send_json(200, {'ok': True, 'status': u['status']})        # the token is NEVER returned here: only the owner can give it
 
+    # ------------------------------------------------------------------ admin API (owner only)
+    def _user_state(self, uid):
+        try:
+            p = ACC.user_db(uid) if uid else DBPATH
+            if not os.path.exists(p):
+                return {}
+            c = db.connect(p)
+            try:
+                return db.read_state(c) or {}
+            finally:
+                c.close()
+        except Exception:
+            return {}
+
+    def _card(self, u, usage7=None, online_ids=(), full=False):
+        st = self._user_state(u['id']); now = int(time.time() * 1000)
+        mode = (st.get('settings') or {}).get('mode') or 'business'
+        stu = adminlib.student_summary(st, now) if mode == 'student' or st.get('courses') else None
+        card = {'id': u['id'], 'name': u['name'], 'phone': u['phone'], 'token': u['token'], 'status': u['status'], 'created': u['created'], 'approved': u['approved'],
+                'bound': u['bound'], 'device': (u['device_hash'] or '')[:8], 'lastSeen': u['last_seen'], 'lastIp': u['last_ip'], 'note': u['note'],
+                'country': u.get('country') or '', 'cc': u.get('cc') or '', 'city': u.get('city') or '', 'ua': u.get('last_ua') or '', 'firstSeen': u.get('first_seen'),
+                'features': ACC.feature_map(u), 'online': u['id'] in online_ids, 'minutes7': round((usage7 or {}).get(u['id'], 0) / 60), 'mode': mode,
+                'stats': {'tasks': len(st.get('tasks', [])), 'docs': len(st.get('docs', [])), 'bytes': os.path.getsize(ACC.user_db(u['id'])) if os.path.exists(ACC.user_db(u['id'])) else 0}}
+        if stu:
+            card['student'] = {'name': stu['profile'].get('sname'), 'class': stu['profile'].get('sclass'), 'quizAvg': stu['quizAvg'], 'studied': stu['chaptersStudied'], 'chapters': stu['chaptersTotal'], 'streak': stu['streak']}
+        if full:
+            card['studentFull'] = stu; card['business'] = adminlib.business_summary(st, now)
+        return card
+
     def admin(self, method, path, ctx):
         if ctx['role'] != 'owner' or not token():
             return self.send_json(403, {'error': 'owner-only'})
-        def card(u):
-            st = {}
+        ip = self.client_ip(); owner_tok = token()
+        def body():
             try:
-                p = ACC.user_db(u['id'])
-                if os.path.exists(p):
-                    c = db.connect(p)
-                    try:
-                        s = db.read_state(c)
-                    finally:
-                        c.close()
-                    st = {'tasks': len(s.get('tasks', [])), 'docs': len(s.get('docs', [])), 'bytes': os.path.getsize(p)}
+                r = json.loads(self.read_body() or b'{}')
+                return r if isinstance(r, dict) else {}
             except Exception:
-                pass
-            return {'id': u['id'], 'name': u['name'], 'phone': u['phone'], 'token': u['token'], 'status': u['status'], 'created': u['created'], 'approved': u['approved'],
-                    'bound': u['bound'], 'device': (u['device_hash'] or '')[:8], 'lastSeen': u['last_seen'], 'lastIp': u['last_ip'], 'note': u['note'], 'stats': st}
+                return None
+        if path == '/api/admin/overview' and method == 'GET':
+            us = ACC.list(); now = int(time.time() * 1000)
+            on = ACC.online(now); names = {u['id']: u['name'] for u in us}; names[0] = OWNER_NAME
+            tr = ACC.trend(14); usage7 = ACC.usage_totals(7)
+            top = sorted(({'id': k, 'name': names.get(k, '#%s' % k), 'minutes': round(v / 60)} for k, v in usage7.items() if v > 0), key=lambda x: -x['minutes'])[:6]
+            models = ollama_models()
+            return self.send_json(200, {
+                'now': now,
+                'users': {'total': len(us), 'pending': sum(1 for u in us if u['status'] == 'pending'), 'approved': sum(1 for u in us if u['status'] == 'approved'),
+                          'active': sum(1 for u in us if u['status'] == 'active'), 'revoked': sum(1 for u in us if u['status'] == 'revoked'),
+                          'students': sum(1 for u in us if (self._user_state(u['id']).get('settings') or {}).get('mode') == 'student'), 'business': sum(1 for u in us if (self._user_state(u['id']).get('settings') or {}).get('mode') != 'student')},
+                'online': [{'uid': s['uid'], 'name': names.get(s['uid'], '#%s' % s['uid']), 'ip': s['ip'], 'country': s['country'], 'cc': s['cc'], 'city': s['city'], 'secs': int(s['secs']), 'since': s['start'], 'mode': s['mode']} for s in on],
+                'today': {'minutes': round((tr[-1]['secs'] if tr else 0) / 60), 'users': tr[-1]['users'] if tr else 0, 'logins': sum(1 for l in ACC.recent('logins', 200) if l['at'] > now - 864e5)},
+                'trend': [{'day': t['day'], 'users': t['users'], 'minutes': round(t['secs'] / 60)} for t in tr],
+                'countries': ACC.countries(30), 'top': top,
+                'health': adminlib.health(DATA, models), 'storage': adminlib.storage(ACC),
+                'security': ACC.recent('security', 25), 'audit': ACC.recent('audit', 25), 'logins': ACC.recent('logins', 25),
+                'announcement': ACC.meta_get('announcement'), 'features': list(access.FEATURES), 'geoip': ACC.geo_on, 'owner': OWNER_NAME, 'adminEmail': ACC.admin_email()})
         if path == '/api/admin/users' and method == 'GET':
-            us = ACC.list()
-            return self.send_json(200, {'users': [card(u) for u in us], 'pending': sum(1 for u in us if u['status'] == 'pending'), 'now': int(time.time() * 1000)})
+            us = ACC.list(); on = {s['uid'] for s in ACC.online()}; u7 = ACC.usage_totals(7)
+            return self.send_json(200, {'users': [self._card(u, u7, on) for u in us], 'pending': sum(1 for u in us if u['status'] == 'pending'), 'now': int(time.time() * 1000)})
         if path == '/api/admin/users' and method == 'POST':
-            try:
-                req = json.loads(self.read_body() or b'{}')
-            except Exception:
-                return self.send_json(400, {'error': 'json'})
-            u = ACC.add(req.get('name'), req.get('phone'))
-            return self.send_json(200, {'user': card(u)}) if u else self.send_json(400, {'error': 'name'})
-        m = re.match(r'^/api/admin/users/(\d+)/(approve|revoke|restore|reset|regen|delete|note)$', path)
-        if m and method == 'POST':
-            uid, act = int(m.group(1)), m.group(2)
-            if act == 'note':
-                try:
-                    ACC.note(uid, json.loads(self.read_body() or b'{}').get('note', ''))
-                except Exception:
-                    return self.send_json(400, {'error': 'json'})
-                return self.send_json(200, {'ok': True})
-            r = ACC.act(uid, act)
+            r = body()
             if r is None:
+                return self.send_json(400, {'error': 'json'})
+            u, err = ACC.create(r.get('name'), r.get('phone'), r.get('password') or None, owner_tok, r.get('features'))
+            if err:
+                return self.send_json(400, {'error': err})
+            ACC.audit('owner', 'create-user', u['name'], 'password set' if r.get('password') else 'token generated')
+            return self.send_json(200, {'user': self._card(u)})
+        m = re.match(r'^/api/admin/users/(\d+)$', path)
+        if m and method == 'GET':
+            uid = int(m.group(1)); u = ACC.get(uid)
+            if not u:
                 return self.send_json(404, {'error': 'none'})
-            return self.send_json(200, {'deleted': True} if act == 'delete' else {'user': card(r)})
+            on = {s['uid'] for s in ACC.online()}
+            return self.send_json(200, {'user': self._card(u, ACC.usage_totals(7), on, full=True), 'usage': ACC.usage_of(uid, 30), 'sessions': ACC.sessions_of(uid, 15), 'logins': ACC.logins_of(uid, 15)})
+        m = re.match(r'^/api/admin/users/(\d+)/export$', path)
+        if m and method == 'GET':
+            uid = int(m.group(1)); u = ACC.get(uid)
+            if not u:
+                return self.send_json(404, {'error': 'none'})
+            data = json.dumps({'user': {k: u[k] for k in ('id', 'name', 'phone', 'status', 'created')}, 'state': self._user_state(uid)}, ensure_ascii=False).encode('utf-8')
+            ACC.audit('owner', 'export-user', u['name'], '%d bytes' % len(data))
+            self.send_response(200); self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="piyu-user-%d.json"' % uid); self.send_header('Content-Length', str(len(data))); self.end_headers()
+            self.wfile.write(data); return
+        if path == '/api/admin/announce' and method == 'POST':
+            r = body()
+            if r is None:
+                return self.send_json(400, {'error': 'json'})
+            txt = str(r.get('text', '')).strip()[:300]
+            ACC.meta_set('announcement', txt); ACC.audit('owner', 'announcement', '', txt[:80] or '(cleared)')
+            return self.send_json(200, {'ok': True, 'announcement': txt})
+        if path == '/api/admin/backup' and method == 'GET':
+            return self.admin_backup()
+        if path == '/api/admin/credentials' and method == 'POST':
+            r = body()
+            if r is None:
+                return self.send_json(400, {'error': 'json'})
+            err = ACC.set_admin(r.get('email'), r.get('password'))
+            if err:
+                return self.send_json(400, {'error': err})
+            ACC.audit('owner', 'admin-credentials', ACC.admin_email(), 'password changed'); return self.send_json(200, {'ok': True, 'email': ACC.admin_email()})
+        if path == '/api/admin/logout' and method == 'POST':
+            ACC.drop_admin_session(self.headers.get('X-Piyu-Admin', '')); return self.send_json(200, {'ok': True})
+        m = re.match(r'^/api/admin/users/(\d+)/(approve|revoke|restore|reset|regen|delete|note|setpass|features)$', path)
+        if m and method == 'POST':
+            uid, act = int(m.group(1)), m.group(2); u0 = ACC.get(uid)
+            if not u0:
+                return self.send_json(404, {'error': 'none'})
+            r = body() if act in ('note', 'setpass', 'features') else {}
+            if r is None:
+                return self.send_json(400, {'error': 'json'})
+            if act == 'note':
+                ACC.note(uid, r.get('note', '')); ACC.audit('owner', 'note', u0['name'], str(r.get('note', ''))[:60]); return self.send_json(200, {'ok': True})
+            if act == 'features':
+                f = ACC.set_features(uid, r.get('features') or {}); ACC.audit('owner', 'features', u0['name'], json.dumps(f)); return self.send_json(200, {'features': f})
+            if act == 'setpass':
+                u, err = ACC.setpass(uid, r.get('password'), owner_tok)
+                if err:
+                    return self.send_json(400, {'error': err})
+                ACC.audit('owner', 'set-password', u['name'], ''); return self.send_json(200, {'user': self._card(u)})
+            res = ACC.act(uid, act)
+            ACC.audit('owner', act, u0['name'], '')
+            if act == 'delete':
+                return self.send_json(200, {'deleted': True})
+            return self.send_json(200, {'user': self._card(res)})
         return self.send_json(404, {'error': 'unknown'})
+
+    def admin_login(self):
+        ip = self.client_ip()
+        if not token():
+            return self.send_json(400, {'error': 'no-multiuser'})
+        if fail_blocked(ip):
+            return self.send_json(429, {'error': 'locked'})
+        try:
+            r = json.loads(self.read_body() or b'{}')
+        except Exception:
+            return self.send_json(400, {'error': 'json'})
+        if ACC.check_admin(r.get('email'), r.get('password')):
+            ACC.audit('admin', 'login', str(r.get('email'))[:60], ip)
+            return self.send_json(200, {'session': ACC.new_admin_session(), 'name': OWNER_NAME, 'email': ACC.admin_email()})
+        fail_add(ip); sec_log('admin-login', ip, str(r.get('email', ''))[:60]); time.sleep(0.4)
+        return self.send_json(401, {'error': 'login'})
+
+    def admin_backup(self):
+        """one zip with a consistent copy of every database (owner's data, access registry, every user)"""
+        import zipfile, tempfile, sqlite3 as sq
+        buf = io.BytesIO()
+        with tempfile.TemporaryDirectory() as td, zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            srcs = [('owner/piyu.sqlite3', DBPATH), ('access.sqlite3', ACC.path)] + [('users/%d/piyu.sqlite3' % u['id'], ACC.user_db(u['id'])) for u in ACC.list() if os.path.exists(ACC.user_db(u['id']))]
+            for i, (name, p) in enumerate(srcs):
+                if not os.path.exists(p):
+                    continue
+                tmp = os.path.join(td, '%d.db' % i); a = sq.connect(p); b = sq.connect(tmp)
+                try:
+                    a.backup(b)
+                finally:
+                    b.close(); a.close()
+                z.write(tmp, name)
+        data = buf.getvalue(); ACC.audit('owner', 'backup', '', '%d bytes' % len(data))
+        self.send_response(200); self.send_header('Content-Type', 'application/zip')
+        self.send_header('Content-Disposition', 'attachment; filename="piyu-backup-%s.zip"' % time.strftime('%Y%m%d-%H%M')); self.send_header('Content-Length', str(len(data))); self.end_headers()
+        self.wfile.write(data)
 
     def ai_chat(self, con):
         body = self.read_body()
@@ -634,6 +810,34 @@ class H(SimpleHTTPRequestHandler):
     # ---------- GET: api / tts / static ----------
     ZIPPABLE = ('text/', 'application/javascript', 'application/json', 'application/manifest+json', 'image/svg+xml', 'application/xml')
     GZ = {}
+    ASSET = re.compile(r'(src|href)="([A-Za-z0-9_./-]+\.(?:js|css|svg|webmanifest))"')
+
+    def _index(self, fs, root, head=False):
+        """index.html with every local script/style/icon pointing at <name>?v=<fingerprint>: the browser keeps them for a year and fetches a file again only when it really changed"""
+        def ver(m):
+            f = os.path.join(root, m.group(2))
+            try:
+                st = os.stat(f)
+            except OSError:
+                return m.group(0)
+            return '%s="%s?v=%x"' % (m.group(1), m.group(2), (st.st_mtime_ns // 1000 ^ st.st_size) & 0xffffffff)
+        with open(fs, 'rb') as f:
+            html = self.ASSET.sub(ver, f.read().decode('utf-8')).encode('utf-8')
+        etag = 'W/"i%s"' % hashlib.md5(html).hexdigest()[:12]
+        if self.headers.get('If-None-Match') == etag:
+            self.send_response(304); self.send_header('ETag', etag); self.send_header('Cache-Control', 'no-cache'); self.end_headers(); return True
+        body, gz = html, 'gzip' in self.headers.get('Accept-Encoding', '')
+        if gz:
+            body = self.GZ.get(('index', etag)) or gzip.compress(html, 6)
+            self.GZ[('index', etag)] = body
+        self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.send_header('ETag', etag); self.send_header('Cache-Control', 'no-cache')
+        if gz:
+            self.send_header('Content-Encoding', 'gzip'); self.send_header('Vary', 'Accept-Encoding')
+        self.send_header('Content-Length', str(len(body))); self.end_headers()
+        if not head:
+            self.wfile.write(body)
+        return True
+
     def static(self, path, head=False):
         """serve a file with ETag (304 when unchanged), gzip for text-like files and a sensible cache policy. False = not a plain file."""
         from urllib.parse import unquote
@@ -644,13 +848,16 @@ class H(SimpleHTTPRequestHandler):
         if not fs.startswith(root + os.sep) or not os.path.isfile(fs):
             return False
         st = os.stat(fs); etag = 'W/"%x-%x"' % (st.st_mtime_ns, st.st_size)
+        versioned = '?v=' in self.path
+        if fs == os.path.join(root, 'index.html'):
+            return self._index(fs, root, head)
         ctype = mimetypes.guess_type(fs)[0] or 'application/octet-stream'
         if ctype in ('text/javascript', 'application/x-javascript'):
             ctype = 'application/javascript'
         if ctype.startswith('text/') or ctype in ('application/javascript', 'application/json'):
             ctype += '; charset=utf-8'
         heavy = p.startswith('/vendor/') or p.startswith('/voices/') or p.endswith('.traineddata')
-        cache = 'public, max-age=604800' if heavy else 'no-cache'          # app files: always re-check (cheap 304), big vendor files: a week
+        cache = 'public, max-age=31536000, immutable' if versioned else 'public, max-age=604800' if heavy else 'no-cache'   # ?v=<hash> files never change under that name: cached for a year; others re-check (cheap 304)
         if self.headers.get('If-None-Match') == etag:
             self.send_response(304); self.send_header('ETag', etag); self.send_header('Cache-Control', cache); self.end_headers(); return True
         zip_ok = ctype.split(';')[0].startswith(self.ZIPPABLE) and st.st_size > 600 and 'gzip' in self.headers.get('Accept-Encoding', '')
@@ -692,6 +899,8 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/tts':
             if not self.authed():
                 return self.deny()
+            if not self.has('voice'):
+                return self.send_json(403, {'error': 'feature', 'feature': 'voice'})
             if not rate_ok(self.client_ip()):
                 return self.send_json(429, {'error': 'slow down'})
             q = parse_qs(u.query)

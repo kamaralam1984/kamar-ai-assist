@@ -46,3 +46,15 @@ Hindi (Hinglish) · English · বাংলা · मराठी · اردو �
 * Android: koi bhi app "100% kabhi band nahi" ki guarantee nahi de sakti — Force stop ya aggressive battery-saver rok sakta hai (Settings ka 🔋 button dekhein). Login sirf is phone ka local login hai.
 * VPS par asli deploy abhi aapke check karne ke liye baaki hai (`deploy/DEPLOY.md`).
 # kamar-ai-assist
+
+
+## Docker (optional)
+```bash
+echo "PIYU_TOKEN=$(openssl rand -base64 24)" > .env      # your owner token / admin password
+bash deploy/fetch_voices.sh                              # downloads the Piper voices into ./voices
+docker compose up -d                                     # http://127.0.0.1:8080  (admin: /admin)
+```
+The container is read-only, runs as a non-root user with all capabilities dropped, keeps its data in the `piyu-data` volume and has a health check. Put nginx/Caddy in front for HTTPS. Local AI (Ollama) on the host is reached through `PIYU_OLLAMA` (default `http://host.docker.internal:11434`).
+
+## Admin panel
+Open `/admin` and enter the owner token (`PIYU_TOKEN`). Create/approve users, set or change passwords, switch features on/off per user, see who is online and from which country, how long each user stayed on each page, student progress, server health, security events and the audit log. `PIYU_GEOIP=0` turns the country lookup off; `PIYU_TZ_MIN` sets the day boundary (default 330 = India).

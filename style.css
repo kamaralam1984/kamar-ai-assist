@@ -447,3 +447,8 @@ details{margin-top:8px}details summary{cursor:pointer;color:var(--blue2)}
 @keyframes startGlow{50%{box-shadow:0 8px 40px rgba(255,215,106,.85),0 0 0 1px rgba(255,243,176,.5),inset 0 1px 0 rgba(255,255,255,.6)}}
 @keyframes goldsheen{0%{background-position:160% 0}60%,100%{background-position:-60% 0}}
 @media (prefers-reduced-motion:reduce){#startBtn.btn.primary,#startBtn.btn.primary::before,#startBtn.btn.primary::after{animation:none!important}}
+
+/* ---- announcement from the admin + switches ---- */
+.annBar{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:0 0 6px;border-radius:0 0 18px 18px;font-size:13.5px;color:#1b1200;background:linear-gradient(110deg,#b8860b 0%,#ffd76a 12.5%,#fff3b0 25%,#ffd76a 37.5%,#b8860b 50%,#ffd76a 62.5%,#fff3b0 75%,#ffd76a 87.5%,#b8860b 100%);background-size:200% 100%;animation:btnflow 4s linear infinite;box-shadow:0 8px 24px rgba(255,183,3,.3)}
+.annBar span{flex:1;font-weight:600}.annBar button{border:0;background:rgba(0,0,0,.15);border-radius:10px;width:28px;height:28px;cursor:pointer;color:#1b1200}
+body.nodocs #drop,body.nodocs #attCam,body.nodocs label[for=camFile]{opacity:.35;pointer-events:none}

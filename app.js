@@ -92,8 +92,27 @@ const deviceReady = (async () => { try { if (window.PiyuNative && PiyuNative.isN
 async function sha256hex(t) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
 const hdrs = () => S.settings.token ? { 'X-Piyu-Token': S.settings.token, 'X-Piyu-Device': DEVICE } : {};
 const DEV_ONLY = ['token', 'pinHash', 'loggedIn', 'serverUrl'];           // belong to this phone only: never sent to the server
-const stateOut = () => { const c = Object.assign({}, S); c.settings = Object.assign({}, S.settings); DEV_ONLY.forEach(k => delete c.settings[k]); return c; };
+let knownDocs = null;                      // document ids the server already has (used when the admin switched uploads off)
+const stateOut = () => { const c = Object.assign({}, S); c.settings = Object.assign({}, S.settings); DEV_ONLY.forEach(k => delete c.settings[k]); if (!featOn('docs') && knownDocs) c.docs = (S.docs || []).filter(d => knownDocs.has(d.id)); return c; };
 let ME = {};
+/* switches the admin can turn off per user (voice / ai / web / docs / student / business) */
+const featOn = k => !ME.features || ME.features[k] !== false;
+let voiceBlocked = false;
+function showAnnouncement(t) {
+  const bar = document.getElementById('annBar'); if (!bar) return; t = String(t || '').trim(); let seen = ''; try { seen = localStorage.getItem('piyu.annx') || ''; } catch (e) { }
+  bar.hidden = !t || seen === t; document.getElementById('annTxt').textContent = t; bar.dataset.t = t;
+}
+function applyFeatures() {
+  const f = ME.features || {};
+  document.body.classList.toggle('nodocs', f.docs === false);
+  document.querySelectorAll('#modeBox [data-mode],#setModeCard [data-mode]').forEach(b => { b.hidden = f[b.dataset.mode] === false; });
+  if (window.PiyuStudent) {
+    if (f.student === false && S.settings.mode === 'student') { S.settings.mode = 'business'; save(); PiyuStudent.applyMode(); }
+    else if (f.business === false && f.student !== false && S.settings.mode !== 'student' && !$('#app').hidden) { S.settings.mode = 'student'; save(); PiyuStudent.applyMode(); PiyuStudent.onboard(); }
+  }
+  if (f.voice === false) { voiceBlocked = true; try { stopSpeaking(); } catch (e) { } } else voiceBlocked = false;
+  showAnnouncement(ME.announcement);
+}
 /* the Android app is served from the phone itself, so it needs the address of the Piyu server (device setting, empty in a browser) */
 const serverBase = () => String(S.settings.serverUrl || window.PIYU_DEFAULT_SERVER || '').replace(/\/+$/, '');   // APK: the address is built in (Settings can override it)
 const U = p => serverBase() + p;
@@ -164,7 +183,7 @@ async function checkReg() {
     m.textContent = st === 'pending' ? '⏳ ' + _t('Owner की मंज़ूरी का इंतज़ार है') : (st === 'approved' || st === 'active') ? '✅ ' + _t('Owner ने मंज़ूर कर दिया — उनसे token लेकर ऊपर डालिए') : st === 'revoked' ? '⛔ ' + _t(ACCESS_MSG.revoked) : '';
   } catch (e) { }
 }
-async function loadMe() { try { const r = await fetchT('/api/me', { headers: hdrs(), cache: 'no-store' }, 8000); if (r.ok) { ME = await r.json(); showAdminLink(); } } catch (e) { } }
+async function loadMe() { try { const r = await fetchT('/api/me', { headers: hdrs(), cache: 'no-store' }, 8000); if (r.ok) { ME = await r.json(); showAdminLink(); applyFeatures(); } } catch (e) { } }
 function showAdminLink() { const row = $('#adminRow'); if (!row) return; row.hidden = ME.role !== 'owner'; const a = $('#adminLink'); if (a) { a.href = serverBase() + '/admin'; a.onclick = e => { if (isNativeApp() && PiyuNative.openUrl) { e.preventDefault(); PiyuNative.openUrl(a.href); } }; } }
 $('#reqSend').onclick = requestAccess; $('#reqCheck').onclick = checkReg;
 $('#tokOk').onclick = () => applyToken($('#tokIn').value);
@@ -180,12 +199,14 @@ async function syncNow(manual) {
       const r = await fetchT('/api/state' + (quick ? '?since=' + lastRev : ''), { headers: hdrs(), cache: 'no-store' }, 20000);
       if (r.status === 401 || r.status === 403 || r.status === 429) {
         let code = 'token'; try { code = (await r.json()).error || 'token'; } catch (e) { } if (r.status === 429) code = 'locked';
+        if (code === 'feature') { loadMe(); done = true; break; }
         accessProblem(code); done = true; break;
       }
       if (!r.ok) throw new Error('http ' + r.status);
       const j = await r.json();
       if (j.same) { syncInfo = { ok: true, at: Date.now(), msg: "Sync हो गया" }; syncFails = 0; done = true; break; }
       const { state: remote, rev } = j;
+      if (remote && Array.isArray(remote.docs)) knownDocs = new Set(remote.docs.map(d => d.id));
       let changed = false;
       if (remote) changed = Store.mergeState(S, remote);
       if (changed) { dirtySeq++; snapshot(); await Store.save(S); render(); }
@@ -197,6 +218,7 @@ async function syncNow(manual) {
       }
       const p = await fetchT('/api/state', { method: 'PUT', headers: hd, body }, 60000);
       if (p.status === 409) { await sleep(150 + Math.random() * 300); continue; }   // someone else saved first: fetch, merge again
+      if (p.status === 403) { let pe = {}; try { pe = await p.json(); } catch (e) { } if (pe.error === 'feature') { loadMe(); syncInfo = { ok: false, at: Date.now(), msg: 'Admin ने यह सुविधा बंद की है' }; done = true; break; } }
       if (!p.ok) throw new Error('put ' + p.status);
       try { const pj = await p.json(); lastRev = pj.rev || 0; if (dirtySeq === mark) syncedSeq = mark; } catch (e) { }
       if (!ME.role) loadMe();
@@ -217,6 +239,21 @@ function showSync() {
   const el = $('#syncStatus'); if (!el) return;
   el.textContent = (syncInfo.ok ? '🟢 ' : syncInfo.ok === false ? '🟠 ' : '⚪ ') + _t(syncInfo.msg) + (syncInfo.at ? ' · ' + hm(syncInfo.at) : '');
 }
+
+/* ================= usage tracking (for the admin panel): a tiny beat every 30 s while the app is open ================= */
+const SID = randHex(12); let tLast = Date.now();
+const trackTab = () => window.__ovTab || ((document.querySelector('.tab.active') || {}).id || 'tab-app').replace('tab-', '');
+async function trackBeat(wasVisible) {
+  const app = document.getElementById('app'); if (!app || app.hidden) { tLast = Date.now(); return; }
+  const now = Date.now(), vis = wasVisible === true || document.visibilityState === 'visible', dt = vis ? Math.min(60, (now - tLast) / 1000) : 0; tLast = now;
+  try {
+    const r = await fetch(U('/api/track'), { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, hdrs()), keepalive: true, body: JSON.stringify({ sid: SID, tab: trackTab(), dt: Math.round(dt), vis, mode: S.settings.mode === 'student' ? 'student' : 'business' }) });
+    if (r.ok) { const j = await r.json(); if (j.announcement !== undefined) showAnnouncement(j.announcement); }
+  } catch (e) { }
+}
+setInterval(() => { if (document.visibilityState === 'visible') trackBeat(); else tLast = Date.now(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) trackBeat(true); else tLast = Date.now(); });
+document.addEventListener('click', e => { if (e.target.id === 'annX') { const b = document.getElementById('annBar'); try { localStorage.setItem('piyu.annx', b.dataset.t || ''); } catch (er) { } b.hidden = true; } });
 
 /* ================= time helpers ================= */
 const pad = n => String(n).padStart(2, '0');
@@ -426,6 +463,7 @@ async function sayNeural(text, interrupt, mood) {
 
 function say(text, opts) {
   opts = opts || {};
+  if (voiceBlocked) return;
   if (usePhone(speechLang())) {
     sayPhone(text, opts.interrupt !== false, opts.mood).then(ok => { if (!ok) { phoneTts = null; say(text, opts); } });
     return;
@@ -797,7 +835,7 @@ function render() {
 
 /* ================= how-to dialog ================= */
 /* ---- links & attachments ---- */
-const MAX_ATT = 25 * 1024 * 1024, MAX_ATT_IN = 80 * 1024 * 1024;   // 25 MB is kept after compression; a big photo/scan may come in up to 80 MB
+const MAX_ATT = 50 * 1024 * 1024, MAX_ATT_IN = 100 * 1024 * 1024;   // a file may be up to 100 MB; it is shrunk first (photos, scans, Office pictures) and 50 MB is kept at most
 const SAFE_OPEN = /^(image\/(png|jpe?g|gif|webp|bmp)|application\/pdf|text\/plain|audio\/|video\/)/;   // never open html/svg (they would run inside the app origin)
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 function linkify(text) {   // returns safe HTML
@@ -817,13 +855,13 @@ try { upSet = new Set(JSON.parse(localStorage.getItem('piyu.up') || '[]')); } ca
 const markUp = id => { upSet.add(id); try { localStorage.setItem('piyu.up', JSON.stringify([...upSet])); } catch (e) { } };
 const attId = () => 'att_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 async function addAttachment(t, file) {
-  if (file.size > MAX_ATT_IN) { toast(_t("{0} बहुत बड़ी है (अधिकतम 25 MB)", [file.name])); return false; }
+  if (file.size > MAX_ATT_IN) { toast(_t("{0} बहुत बड़ी है (अधिकतम 100 MB)", [file.name])); return false; }
   if (S.settings.compress !== false && file.size > 150 * 1024) {      // make photos / scanned PDFs small first: faster upload, sync and storage, still readable
     if (file.size > 1024 * 1024) toast(_t("⏳ {0} छोटी कर रही हूँ…", [file.name]));
     const r = await PiyuMedia.optimize(file, { onProgress: (i, n) => { if (n > 1) $('#toast').textContent = _t("⏳ {0} छोटी कर रही हूँ… {1}/{2}", [file.name, i, n]); } });
     if (r.changed) { toast(_t("📉 {0}: {1} → {2} (छोटा किया, साफ़ पढ़ने लायक)", [file.name, PiyuMedia.fmt(r.from), PiyuMedia.fmt(r.to)])); file = r.blob; }
   }
-  if (file.size > MAX_ATT) { toast(_t("{0} बहुत बड़ी है (अधिकतम 25 MB)", [file.name])); return false; }
+  if (file.size > MAX_ATT) { toast(_t("{0} छोटी करने के बाद भी बहुत बड़ी है (अधिकतम 50 MB)", [file.name])); return false; }
   const id = attId();
   await Store.putBlob(id, file);
   (t.attachments || (t.attachments = [])).push({ id, name: file.name || 'photo.jpg', type: file.type || 'application/octet-stream', size: file.size, at: Date.now() });
@@ -1655,10 +1693,13 @@ let ocrCtl = null;
 async function addFiles(files) {
   const msg = $('#upMsg');
   for (const f of files) {
+    if (f.size > PiyuMedia.MAX_UPLOAD) { msg.hidden = false; msg.className = 'msg err'; msg.textContent = '✖ ' + _t("{0} बहुत बड़ी है (अधिकतम 100 MB)", [f.name]); continue; }
     const ac = new AbortController(); ocrCtl = ac;
     try {
       msg.hidden = false; msg.className = 'msg'; msg.textContent = _t("⏳ {0} पढ़ रही हूँ…", [f.name]);
-      const blocks = await C.fileToBlocks(f, {
+      let src = f;                                    // a big photo is shrunk first: OCR is faster and uses less memory, text stays readable
+      if (S.settings.compress !== false && /^image\//.test(f.type) && f.size > 1024 * 1024) { try { const r = await PiyuMedia.optimizeImage(f); if (r.changed) src = r.blob; } catch (e) { } }
+      const blocks = await C.fileToBlocks(src, {
         langs: S.settings.ocrLang, signal: ac.signal,
         onProgress: (st, fr, p, n) => {
           const pct = Math.round((fr || 0) * 100);
@@ -2120,6 +2161,7 @@ $('#startBtn').onclick = async () => {
   await detectNeural();
   $('#splash').hidden = true; $('#app').hidden = false;
   if (window.PiyuStudent) { PiyuStudent.applyMode(); setTimeout(() => { PiyuStudent.onboard(); PiyuStudent.autoTick(); }, 900); setInterval(() => PiyuStudent.autoTick(), 600000); }
+  loadMe(); setTimeout(trackBeat, 2500);
   audio(); keepAwake();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => { });
   if (!synth && !neural) toast(_t("आवाज़ उपलब्ध नहीं — ./run.sh से चलाएँ"));
