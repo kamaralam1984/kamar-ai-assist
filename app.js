@@ -319,7 +319,9 @@ function chunk(t, max) {
     }
     if (p) out.push(p);
   });
-  return out;
+  const merged = [];                                   // tiny pieces sound choppy: glue them to a neighbour when it still fits
+  out.forEach(p => { const l = merged.length - 1; if (l >= 0 && (merged[l].length < 22 || p.length < 14) && merged[l].length + 1 + p.length <= max && !/[.!?।]$/.test(merged[l])) merged[l] += ' ' + p; else merged.push(p); });
+  return merged;
 }
 function cleanForSpeech(t) {
   return t.replace(/https?:\/\/\S+/g, 'link').replace(/[_`*#|→·•]/g, ' ').replace(/₹/g, ' रुपये ').replace(/\s+/g, ' ');
@@ -329,9 +331,11 @@ function setSpeaking(on) { $('#orb').classList.toggle('speaking', on); $('#statu
 let vtoken = 0, vsources = [], neuralBusy = 0, playAt = 0;
 function stopSpeaking() {
   vtoken++; vsources.forEach(x => { try { x.stop(); } catch (e) { } }); vsources = []; neuralBusy = 0; playAt = 0;
-  speakingCount = 0; if (synth) synth.cancel(); setSpeaking(false);
+  speakingCount = 0; if (synth) synth.cancel();
+  if (isNativeApp() && PiyuNative.ttsAvail) PiyuNative.ttsStop();
+  setSpeaking(false);
 }
-const isSpeaking = () => speakingCount > 0 || neuralBusy > 0 || (synth && synth.speaking);
+const isSpeaking = () => speakingCount > 0 || neuralBusy > 0 || (synth && synth.speaking) || !!(window.PiyuNative && PiyuNative.ttsPending && PiyuNative.ttsPending.size);
 
 async function detectNeural() {
   try {
@@ -360,6 +364,22 @@ function vparams(mood) { return VK.voiceParams(S.settings.style, mood, S.setting
 const pvFor = lang => lang === 'hi' ? S.settings.pvHi : lang === 'en' ? S.settings.pvEn : (S.settings['pv' + lang[0].toUpperCase() + lang.slice(1)] || '');
 const speechLang = () => SCRIPT[S.settings.lang] ? S.settings.lang : 'en';   // the language Piyu speaks (hi / mr / bn / ur, else English)
 
+/* the phone's own Google voice (Android app): the most natural Indian Hindi / Hinglish / Indian English, no server, no gaps */
+let phoneTts = null;
+const usePhone = lang => { const m = S.settings.engine || 'auto'; return isNativeApp() && PiyuNative.ttsAvail && !!phoneTts && phoneTts.ready && m !== 'piper' && !!(phoneTts[lang] && phoneTts[lang].ok); };
+async function sayPhone(text, interrupt, mood) {
+  if (interrupt) stopSpeaking();
+  const lang = speechLang(), t = cleanForSpeech(forSpeech(text)), vp = vparams(mood), voice = ((S.settings.phv || {})[lang]) || '';
+  const parts = chunk(t, 200); if (!parts.length) return true;
+  const rate = Math.max(0.6, Math.min(1.5, (S.settings.phRate || 1) / vp.speed)), pitch = Math.max(0.6, Math.min(1.6, Math.pow(2, (vp.pitch || 0) / 12)));
+  try {
+    setSpeaking(true);
+    for (let i = 0; i < parts.length; i++) await PiyuNative.ttsSpeak({ text: parts[i], lang, voice, rate, pitch, flush: i === 0 && !!interrupt });
+  } catch (e) { setSpeaking(false); return false; }
+  return true;
+}
+if (window.PiyuNative) PiyuNative.onTtsIdle = () => { if (!neuralBusy && !speakingCount) setSpeaking(false); };
+
 /* Piyu's own offline neural voice (Piper via server.py). Audio is fetched ahead and scheduled back-to-back, so it never breaks. */
 async function sayNeural(text, interrupt, mood) {
   if (interrupt) stopSpeaking();
@@ -385,18 +405,18 @@ async function sayNeural(text, interrupt, mood) {
       .then(b => a.decodeAudioData(b));
     jobs[i].catch(() => { });
   };
-  start(0); start(1); start(2);
+  start(0); start(1); start(2); start(3);
   neuralBusy++; setSpeaking(true);
   const done = () => { if (my === vtoken) { neuralBusy = Math.max(0, neuralBusy - 1); if (!neuralBusy) setSpeaking(false); } };
   try {
     for (let i = 0; i < parts.length; i++) {
       const buf = await jobs[i];
-      start(i + 3);
+      start(i + 4);
       if (my !== vtoken) return true;
       const src = a.createBufferSource(), g = a.createGain();
       g.gain.value = S.settings.vol; src.buffer = buf; src.connect(g); g.connect(a.destination);
       const t0 = Math.max(a.currentTime + 0.03, playAt);
-      src.start(t0); playAt = t0 + buf.duration + 0.14;
+      src.start(t0); playAt = t0 + buf.duration + (/[.!?।]$/.test(parts[i].t) ? 0.17 : 0.03);      // a real pause only at sentence ends: phrases inside a sentence flow into each other
       vsources.push(src);
       if (i === parts.length - 1) src.onended = done;
     }
@@ -406,6 +426,10 @@ async function sayNeural(text, interrupt, mood) {
 
 function say(text, opts) {
   opts = opts || {};
+  if (usePhone(speechLang())) {
+    sayPhone(text, opts.interrupt !== false, opts.mood).then(ok => { if (!ok) { phoneTts = null; say(text, opts); } });
+    return;
+  }
   if (neural) {
     sayNeural(text, opts.interrupt !== false, opts.mood).then(ok => { if (!ok && synth) { neural = false; fillVoiceSelects(); say(text, opts); } });
     return;
@@ -1852,6 +1876,17 @@ function voiceUI() {
   $('#setStyle').innerHTML = Object.entries(VK.STYLES).map(([k, v]) => `<option value="${k}" ${k === s.style ? 'selected' : ''}>${esc(_t(v.name))} — ${esc(_t(v.desc))}</option>`).join('');
   $('#setPitchSt').value = s.pitchSt; $('#oPitchSt').textContent = (+s.pitchSt > 0 ? '+' : '') + s.pitchSt;
   $('#setHinglish').checked = s.hinglish !== false;
+  /* voice engine: the phone's Google voice (Indian) is the most natural; Piyu's own (Piper) works everywhere */
+  const native = isNativeApp() && PiyuNative.ttsAvail;
+  $('#engineRow').hidden = !native;
+  if (native) {
+    $('#setEngine').value = s.engine || 'auto';
+    const L = speechLang(), seen = new Set(), vs = ((phoneTts && phoneTts[L] && phoneTts[L].voices) || []).filter(v => /_(IN|PK|BD)$/i.test(v.locale) && !/-language$/.test(v.name)).sort((a, b) => (a.network ? 1 : 0) - (b.network ? 1 : 0) || a.name.localeCompare(b.name)).filter(v => { const k = v.name.replace(/-(local|network)$/, ''); if (seen.has(k)) return false; seen.add(k); return true; });
+    $('#setPhoneVoice').innerHTML = `<option value="">${esc(_t('अपने-आप (सबसे अच्छी)'))}</option>` + vs.map((v, i) => `<option value="${esc(v.name)}" ${((s.phv || {})[L]) === v.name ? 'selected' : ''}>${esc(_t('आवाज़'))} ${i + 1} · ${esc(v.locale)}${v.network ? ' · online' : ''}</option>`).join('');
+    const ok = !!(phoneTts && phoneTts[L] && phoneTts[L].ok);
+    $('#phoneVoiceHint').textContent = ok ? '✅ ' + _t('Phone की भारतीय आवाज़ चालू है') : '⚠ ' + _t('Phone में इस भाषा की आवाज़ नहीं है — नीचे बटन से Google की आवाज़ install करें');
+    $('#phoneVoiceInstall').hidden = ok;
+  }
   $('#voiceLibHint').textContent = voiceLib.length ? (_t("{0} आवाज़ें उपलब्ध · {1}", [voiceLib.length, (voiceGender() === 'male' ? _t("पुरुष आवाज़ चुनी है, इसलिए Piyu पुल्लिंग में बोलेगी (\"बताऊँगा\")।") : _t("महिला आवाज़ चुनी है (\"बताऊँगी\")।"))])) : _t("आवाज़ें ./run.sh (server) चलाने पर मिलती हैं।");
 }
 function bindVoiceLib() {
@@ -1859,6 +1894,9 @@ function bindVoiceLib() {
   $('#personaGrid').onclick = e => { const b = e.target.closest('[data-persona]'); if (b) { applyPersona(b.dataset.persona); say(_t(SAMPLE.hi)); } };
   $('#setPvHi').onchange = e => { s.pvHi = e.target.value; s.persona = ''; save(); voiceUI(); say(_t(SAMPLE.hi)); };
   $('#setPvEn').onchange = e => { s.pvEn = e.target.value; s.persona = ''; save(); voiceUI(); say(SAMPLE.en); };
+  $('#setEngine').onchange = e => { s.engine = e.target.value; save(); voiceUI(); say(_t(SAMPLE.hi)); };
+  $('#setPhoneVoice').onchange = e => { const L = speechLang(); s.phv = Object.assign({}, s.phv || {}, { [L]: e.target.value }); save(); say(_t(SAMPLE.hi)); };
+  $('#phoneVoiceInstall').onclick = () => PiyuNative.ttsOpenSettings();
   $('#setStyle').onchange = e => { s.style = e.target.value; s.persona = ''; save(); voiceUI(); say(_t(SAMPLE.hi)); };
   $('#setPitchSt').oninput = e => { s.pitchSt = +e.target.value; $('#oPitchSt').textContent = (s.pitchSt > 0 ? '+' : '') + s.pitchSt; };
   $('#setPitchSt').onchange = () => { save(); say(_t(SAMPLE.hi)); };
@@ -2089,6 +2127,7 @@ $('#startBtn').onclick = async () => {
       const t = S.tasks.find(x => x.id === id); if (!t) return;
       if (act === 'done') markDone(t); else if (act === 'snooze') snooze(t, 5);
     };
+    PiyuNative.ttsInfo().then(i => { phoneTts = i; voiceUI(); });
     PiyuNative.init().then(() => { permInfo(); nativeNow(); PiyuNative.pollActions(); });      // permissions are asked by the one clear dialog (permsOnboard) and by Settings → 🔐 अनुमतियाँ
     setInterval(nativeNow, 300000);
     setTimeout(checkAppUpdate, 6000); setInterval(checkAppUpdate, 6 * 3600e3);

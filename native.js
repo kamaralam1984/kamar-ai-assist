@@ -118,6 +118,19 @@
   N.stopListening = async () => { if (BG) { try { await BG.speechStop(); } catch (e) { } } };
   N.deviceId = async () => { if (BG && BG.deviceId) { try { const r = await BG.deviceId(); return (r && r.id) || ''; } catch (e) { } } return ''; };
   N.openUrl = openUrl;
+  /* ---- the phone's own voice (Google text-to-speech: natural Indian Hindi / Indian English, sentences play back-to-back) ---- */
+  N.ttsAvail = !!(BG && BG.ttsSpeak); N.ttsPending = new Map(); N.onTtsIdle = null;
+  let ttsH = null, ttsSeq = 0;
+  N.ttsInfo = async () => { if (!N.ttsAvail) return null; try { return await BG.ttsInfo(); } catch (e) { return null; } };
+  const ttsIdleCheck = () => { const now = Date.now(); N.ttsPending.forEach((t, id) => { if (now - t > 45000) N.ttsPending.delete(id); }); if (!N.ttsPending.size && N.onTtsIdle) N.onTtsIdle(); };
+  N.ttsSpeak = async o => {
+    if (!ttsH) { ttsH = true; try { await BG.addListener('ttsDone', e => { N.ttsPending.delete(e.id); ttsIdleCheck(); }); } catch (e) { ttsH = null; } }
+    const id = 'u' + (++ttsSeq); N.ttsPending.set(id, Date.now());
+    try { await BG.ttsSpeak(Object.assign({}, o, { id })); } catch (e) { N.ttsPending.delete(id); throw e; }
+    return id;
+  };
+  N.ttsStop = async () => { N.ttsPending.clear(); if (BG && BG.ttsStop) { try { await BG.ttsStop(); } catch (e) { } } };
+  N.ttsOpenSettings = async () => { if (BG && BG.ttsOpenSettings) { try { await BG.ttsOpenSettings(); } catch (e) { } } };
   /* what the user pressed on a ringing alarm while Piyu was closed (Done / Snooze) -> applied to the task list */
   N.pollActions = async () => {
     if (!BG || !BG.alarmActions || !N.onAction) return;

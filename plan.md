@@ -290,3 +290,9 @@ Limits: "Hey Piyu" (always-listening wake word) still needs the browser speech A
 - Done / Snooze pressed while Piyu was closed are queued in prefs and applied to the tasks when the app opens (`N.pollActions`).
 - Quiet-hours (soft/silent) alarms stay normal notifications. Settings: "🔔 Alarm test करें", permission row "Lock screen पर alarm" (Android 14 full-screen-intent).
 - Checked on emulator: sound started with USAGE_ALARM with screen off, page opened, Done stopped sound and queued the action.
+
+## Feature 23 — Natural Indian voice
+- Android app: the phone's own Google text-to-speech (Hindi hi-IN, Indian English en-IN, mr/bn/ur) via `PiyuBackground.ttsSpeak` — whole sentences, queued back-to-back by the OS (no gaps, no server). Engine setting: Auto (phone voice when available) / Phone / Piyu (Piper). Phone-voice picker + "install voice" button. Falls back to Piper if the phone has no voice for the language.
+- Piper (web + fallback): silence trimmed from every phrase on the server, real pause only at sentence ends, tiny phrases merged, 4 phrases pre-fetched.
+- AI chat prompt: warm, spoken Indian Hindi/Hinglish/Indian English, no markdown/emojis, Indian number/date style.
+- Tests: `t24voice.js` (9). Emulator check: Google hi voices (hia/hic/hid/hie) listed, speech started.

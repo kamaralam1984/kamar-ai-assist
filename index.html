@@ -141,6 +141,11 @@
         <div id="personaGrid" class="personas"></div>
         <label>हिन्दी / Hinglish आवाज़ <select id="setPvHi"></select></label>
         <label>English आवाज़ <select id="setPvEn"></select></label>
+        <div id="engineRow" hidden>
+          <label>आवाज़ का इंजन <select id="setEngine"><option value="auto">अपने-आप (सबसे अच्छी भारतीय आवाज़)</option><option value="phone">Phone की आवाज़ (Google, भारतीय)</option><option value="piper">Piyu की अपनी आवाज़ (Piper)</option></select></label>
+          <label>Phone की आवाज़ <select id="setPhoneVoice"></select></label>
+          <p class="hint" id="phoneVoiceHint"></p><button class="btn" id="phoneVoiceInstall" hidden>⬇ Google की हिन्दी आवाज़ install करें</button>
+        </div>
         <label>अंदाज़ <select id="setStyle"></select></label>
         <label>आवाज़ की ऊँचाई <input type="range" id="setPitchSt" min="-4" max="4" step="0.5"><output id="oPitchSt"></output></label>
         <label class="chk"><input type="checkbox" id="setHinglish"> Roman में लिखी हिन्दी (Hinglish) को हिन्दी आवाज़ में पढ़ें</label>

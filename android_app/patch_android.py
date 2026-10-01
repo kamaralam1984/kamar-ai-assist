@@ -12,8 +12,11 @@ if 'android.speech.RecognitionService' not in m:
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+        <package android:name="com.google.android.tts" />
     </queries>
 </manifest>''', 1)
+if 'com.google.android.tts' not in m and '<queries>' in m:
+    m = m.replace('<queries>', '<queries>\n        <package android:name="com.google.android.tts" />', 1)
 if 'android:usesCleartextTraffic' not in m:
     m = m.replace('<application', '<application\n        android:usesCleartextTraffic="true"', 1)     # the Piyu server on your Wi-Fi is plain http
 if '.AlarmService' not in m:

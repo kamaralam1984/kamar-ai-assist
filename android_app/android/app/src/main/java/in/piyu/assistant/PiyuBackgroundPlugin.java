@@ -23,7 +23,13 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
+
 import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Set;
 
 /** Piyu's own native bridge: background service, permissions (mic / camera / battery / volume), the phone's speech recognition. */
 @CapacitorPlugin(
@@ -67,6 +73,83 @@ public class PiyuBackgroundPlugin extends Plugin {
         JSObject o = new JSObject();
         try { o.put("id", Settings.Secure.getString(getContext().getContentResolver(), Settings.Secure.ANDROID_ID)); } catch (Exception e) { o.put("id", ""); }
         call.resolve(o);
+    }
+
+    /* ---------------- the phone's own voice (Google text-to-speech): natural Indian Hindi / Indian English, plays one sentence after another without gaps ---------------- */
+    private TextToSpeech tts; private boolean ttsReady = false, ttsInit = false;
+
+    private void ttsEnsure(final Runnable then) {
+        if (tts != null && ttsInit) { then.run(); return; }
+        if (tts == null) {
+            Context c = getContext();
+            TextToSpeech.OnInitListener l = status -> {
+                ttsReady = status == TextToSpeech.SUCCESS; ttsInit = true;
+                if (ttsReady) {
+                    try { tts.setAudioAttributes(new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()); } catch (Exception e) { }
+                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                        @Override public void onStart(String id) { JSObject o = new JSObject(); o.put("id", id); notifyListeners("ttsStart", o); }
+                        @Override public void onDone(String id) { JSObject o = new JSObject(); o.put("id", id); notifyListeners("ttsDone", o); }
+                        @Override public void onError(String id) { JSObject o = new JSObject(); o.put("id", id); notifyListeners("ttsDone", o); }
+                    });
+                }
+                getActivity().runOnUiThread(() -> { for (Runnable r : new ArrayList<>(ttsQueue)) r.run(); ttsQueue.clear(); });
+            };
+            try { tts = new TextToSpeech(c, l, "com.google.android.tts"); } catch (Exception e) { tts = new TextToSpeech(c, l); }
+        }
+        ttsQueue.add(then);
+    }
+    private final ArrayList<Runnable> ttsQueue = new ArrayList<>();
+
+    private JSArray voiceList(String lang) {
+        JSArray a = new JSArray();
+        try {
+            Set<Voice> vs = tts.getVoices();
+            if (vs != null) for (Voice v : vs) {
+                if (!lang.equalsIgnoreCase(v.getLocale().getLanguage())) continue;
+                JSObject o = new JSObject(); o.put("name", v.getName()); o.put("locale", v.getLocale().toString()); o.put("quality", v.getQuality()); o.put("network", v.isNetworkConnectionRequired());
+                a.put(o);
+            }
+        } catch (Exception e) { }
+        return a;
+    }
+    /** which languages can the phone speak, and with which voices */
+    @PluginMethod public void ttsInfo(PluginCall call) {
+        getActivity().runOnUiThread(() -> ttsEnsure(() -> {
+            JSObject o = new JSObject(); o.put("ready", ttsReady);
+            if (ttsReady) {
+                for (String l : new String[]{"hi", "en", "mr", "bn", "ur"}) {
+                    JSObject x = new JSObject(); Locale loc = l.equals("en") ? new Locale("en", "IN") : new Locale(l, l.equals("ur") ? "IN" : "IN");
+                    int r = tts.isLanguageAvailable(loc); x.put("ok", r >= TextToSpeech.LANG_AVAILABLE); x.put("voices", voiceList(l)); o.put(l, x);
+                }
+                try { o.put("engine", tts.getDefaultEngine()); } catch (Exception e) { }
+            }
+            call.resolve(o);
+        }));
+    }
+    /** speak: { id, text, lang: "hi"|"en"|..., voice?: voice name, rate, pitch, flush } — sentences sent with flush=false are queued behind each other */
+    @PluginMethod public void ttsSpeak(PluginCall call) {
+        final String text = call.getString("text", ""), id = call.getString("id", "u" + System.nanoTime()), lang = call.getString("lang", "hi"), voice = call.getString("voice", "");
+        final float rate = call.getFloat("rate", 1f), pitch = call.getFloat("pitch", 1f); final boolean flush = call.getBoolean("flush", false);
+        getActivity().runOnUiThread(() -> ttsEnsure(() -> {
+            if (!ttsReady) { call.reject("no-tts"); return; }
+            try {
+                Locale loc = lang.equals("en") ? new Locale("en", "IN") : new Locale(lang, "IN");
+                boolean set = false;
+                if (!voice.isEmpty()) { try { for (Voice v : tts.getVoices()) if (v.getName().equals(voice)) { tts.setVoice(v); set = true; break; } } catch (Exception e) { } }
+                if (!set) tts.setLanguage(loc);
+                tts.setSpeechRate(Math.max(0.5f, Math.min(2f, rate))); tts.setPitch(Math.max(0.5f, Math.min(2f, pitch)));
+                int r = tts.speak(text, flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, id);
+                if (r != TextToSpeech.SUCCESS) { call.reject("speak-failed"); return; }
+                call.resolve();
+            } catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
+        }));
+    }
+    @PluginMethod public void ttsStop(PluginCall call) {
+        getActivity().runOnUiThread(() -> { try { if (tts != null) tts.stop(); } catch (Exception e) { } call.resolve(); });
+    }
+    @PluginMethod public void ttsOpenSettings(PluginCall call) {      // install / download the Hindi voice data
+        try { Intent i = new Intent("com.android.settings.TTS_SETTINGS"); i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); getContext().startActivity(i); } catch (Exception e) { }
+        call.resolve();
     }
 
     /* ---------------- alarm clock (rings like a real alarm: sound on the alarm volume, lights the screen, full-screen animated page) ---------------- */
@@ -199,7 +282,7 @@ public class PiyuBackgroundPlugin extends Plugin {
         if (m != null) for (String s : m) a.put(s);
         o.put("matches", a); return o;
     }
-    @Override protected void handleOnDestroy() { try { if (sr != null) sr.destroy(); } catch (Exception e) { } }
+    @Override protected void handleOnDestroy() { try { if (sr != null) sr.destroy(); } catch (Exception e) { } try { if (tts != null) tts.shutdown(); } catch (Exception e) { } }
 
     /* ---------------- helpers ---------------- */
     private static boolean exempt(Context c) {
